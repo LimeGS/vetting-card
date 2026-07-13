@@ -417,12 +417,28 @@ function fillHowItWorks(m){
     content FAIL that would read as "no letters here". This is the #1 real cause of a good claim
     being wrongly rejected, and it's caught explicitly.</p>
 
+    <h3>The render-family guard <span style="color:var(--faint);text-transform:none;letter-spacing:0">(v0.4)</span></h3>
+    <p>A real claimant once ran this tool against a PHerc 0139 "photo-style" plate — the official ink
+    map composited onto a papyrus-texture background for publication readability — on windows a human
+    had already read as clear text, and got a flat FAIL. The text was real; the input just wasn't the
+    render family the four gates above were calibrated on. The tool now checks whether the
+    <b>submitted map itself</b> (not just the claimed box) looks like a raw ink-detection render:
+    at least <b>${(m.dark_frac_min*100).toFixed(0)}%</b> of its pixels must sit below a fixed
+    darkness cut — real ink-detection maps carry genuine near-black background; a photo-style
+    composite's background is painted as light "paper" and never gets that dark. Measured on 78 real
+    raw-family maps (min 0.42) vs 15 real photo-composite plates (max 0.24) — a clean gap. Below
+    that, <b>"cannot evaluate"</b> again, not a misleading FAIL. Only active when the submitted image
+    is at least <b>${m.render_family_ctx_ratio.toFixed(0)}×</b> the claimed box's area (whole
+    maps/plates; usually skipped for a tight claim crop like this page's own sample, which is why it
+    doesn't fire below).</p>
+
     <div class="callout"><strong>Green = survived a first automated round of refutation.</strong> It
     is <b>not</b> "confirmed ancient text" — a human reviewer still reads it. The tool contains
-    <b>no trained model</b>: three classical image statistics and explicit thresholds, all auditable.
+    <b>no trained model</b>: classical image statistics and explicit thresholds, all auditable.
     The config hash on every card lets a reviewer re-run the exact same rules. Honest limits:
     calibrated on 2 scrolls, 1 reviewer, at 15–19 µm/px (spot-checked passing at 2.4 µm/px);
-    unvalidated across other ink-detection render families.</div>
+    unvalidated across other ink-detection render families; the render-family guard itself is
+    validated against one composite recipe, not composites in general.</div>
 
     <p class="src">Every number here comes from this build's <code>card_config.py</code>, fetched from
     the repo at load. Full derivation, dataset provenance and caveats:
@@ -568,6 +584,8 @@ META = json.dumps({
     "letter_mm": [_c.LETTER_SIZE_MM_MIN, _c.LETTER_SIZE_MM_MAX],
     "sigma_lo_f": _c.BANDPASS_SIGMA_LO_FACTOR, "sigma_hi_f": _c.BANDPASS_SIGMA_HI_FACTOR,
     "min_letter_frac": _c.MIN_BBOX_LETTER_FRACTION,
+    "dark_frac_min": _c.DARK_FRACTION_MIN,
+    "render_family_ctx_ratio": _c.RENDER_FAMILY_MIN_CONTEXT_RATIO,
 })
 `);
     const meta = JSON.parse(py.globals.get("META"));

@@ -24,7 +24,7 @@ from pathlib import Path
 # Tool / schema identity
 # ---------------------------------------------------------------------------
 
-TOOL_VERSION = "0.3.0"       # v0.3: evidence hashes and explicit fixture-readiness states.
+TOOL_VERSION = "0.4.0"       # v0.4: render-family guard (rejects the wrong image family, not the claim).
 CARD_SCHEMA_VERSION = "v1"   # v1 adds input/evaluator provenance to verdict JSON.
 
 # Fixed default RNG seed for all null-distribution sampling. Overridable via
@@ -236,6 +236,69 @@ BLANK_STD_EPS = 1e-6
 # discipline this check exists to automate).
 SATURATION_FRACTION_MAX = 0.98
 SATURATION_VALUE_EPS = 1e-3
+
+# ---------------------------------------------------------------------------
+# CHECK: render_family (v0.4, 2026-07-13) -- is the SUBMITTED MAP the same
+# kind of image the four verdict gates above were calibrated on (a raw,
+# single-channel ink-detection probability render), or something else that
+# happens to share a file format?
+#
+# Origin: a real claimant ran this tool against PHerc 0139 "photo-style"
+# plates -- the official ink-detection map composited onto a papyrus-texture
+# background at partial opacity for publication-figure readability (see
+# release/pherc0139-column-atlas-gh/scripts/make_photo_plates.py) -- on
+# windows a human had already read as clear text, and got a flat FAIL. The
+# text was real; the input just wasn't the render family E_FRAC_MIN /
+# STRUCTURE_AREAFRAC_MIN / OTSU_SEP_MIN were fit on. That FAIL was
+# indistinguishable from "no letters here", exactly the misleading-verdict
+# failure mode the sub-letter-window guard already exists to prevent for a
+# different cause (see MIN_BBOX_LETTER_FRACTION below) -- this is the same
+# fix applied to a second cause.
+#
+# Signal: fraction of the WHOLE submitted map's pixels below a fixed
+# darkness cut. Raw ds8 ink-detection renders carry real, confidently-blank
+# background (near-black after any reasonable contrast stretch); a
+# photo-style composite deliberately never gets that dark -- its
+# background is painted as light "paper" and even fully-inked pixels are a
+# blend against it, not true black.
+#
+# Measured 2026-07-13, whole-file (not per-window; the signal needs real
+# surrounding background, which a single small crop may not have -- see
+# RENDER_FAMILY_MIN_CONTEXT_RATIO):
+#   - RAW family, n=78 (15 freshly-regenerated PHerc 0139 ds8 plates + the
+#     63 unique source map files underlying the full 516-window calibration
+#     set, spanning all three calibration scrolls): dark fraction min 0.420.
+#   - PHOTO family, n=15 (every plate from the recipe above, one per wrap):
+#     dark fraction max 0.236.
+# DARK_FRACTION_MIN sits with real margin on both sides (~0.12 below the
+# raw min, ~0.06 above the photo max), biased toward protecting real
+# content: a missed detection just reverts to the pre-v0.4 behavior
+# (evaluated normally against the four gates), while a false detection
+# would incorrectly block a legitimate input, which is the worse failure.
+#
+# HONEST LIMIT: this validates ONE compositing recipe against the raw ds8
+# family, not "composites in general" -- a differently-styled composite
+# (different opacity, different background treatment, a scan of a printed
+# figure, etc.) could evade detection and simply fall through to the four
+# gates as before. Re-derive DARK_FRACTION_MIN if a second composite style
+# is ever confirmed. See CALIBRATION.md.
+# ---------------------------------------------------------------------------
+
+DARK_FRACTION_DARKNESS_CUT = 40.0 / 255.0
+DARK_FRACTION_MIN = 0.30
+
+# The render-family signal is only trusted when the submitted array has
+# enough area beyond the claimed bbox to plausibly contain real background
+# -- it was measured only on whole map/plate files (tens to thousands of
+# times the bbox area), never on a tightly-cropped claim image. Below this
+# ratio the check is skipped (reported, not gating) rather than risk a
+# false "wrong render family" verdict on a legitimately small submission --
+# which the tool's own Quickstart explicitly recommends ("a crop around
+# your claim is enough"). PROVISIONAL: 16x (4x per side) is a guess at
+# "probably has some real background in it", not independently measured at
+# the boundary -- the validated regime is whole plates, ratios in the
+# hundreds to thousands.
+RENDER_FAMILY_MIN_CONTEXT_RATIO = 16.0
 
 # ---------------------------------------------------------------------------
 # Minimum sizes (hard errors, not verdict fails -- the tool can't run at all)

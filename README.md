@@ -57,12 +57,24 @@ sample). ~1 s per verdict.
 | `structure` | Do letter-*sized* connected components actually cover the box? | `STRUCTURE_AREAFRAC_MIN` |
 | `contrast_bimodality` | Is the box bimodal (ink + background) rather than a smooth blob (the classic oversmoothed-output pareidolia)? | `OTSU_SEP_MIN` |
 
-Plus a **window-size guard**: a box smaller than one letter at your µm/px
-(the #1 usage error, usually a wrong `--px-um`) returns *"cannot evaluate"*,
-never a content FAIL — a too-small crop can't masquerade as "no letters
-here". Use a ~1 cm window. `--local-rarity` optionally reports the old
-top-1%-of-this-map percentile as non-gating context (expensive at native
-resolution).
+Plus two guards that return *"cannot evaluate"*, never a misleading content
+FAIL, when the input can't honestly be judged at all:
+
+- **Window size**: a box smaller than one letter at your µm/px (the #1
+  usage error, usually a wrong `--px-um`) — a too-small crop can't
+  masquerade as "no letters here". Use a ~1 cm window.
+- **Render family** (v0.4): does the *submitted map* look like the raw
+  ink-detection render the four gates above were calibrated on? A
+  photo-style composite (ink map painted onto a papyrus-texture
+  background for publication readability) fails those gates for reasons
+  that have nothing to do with whether the text is real — this catches
+  that case explicitly instead of returning a flat, misleading FAIL. Only
+  active when the submitted image has enough area around the claim to
+  trust the signal (whole maps/plates; usually skipped for the web tool's
+  own tight, padded claim crops). See CALIBRATION.md.
+
+`--local-rarity` optionally reports the old top-1%-of-this-map percentile
+as non-gating context (expensive at native resolution).
 
 ## Calibration, in numbers
 

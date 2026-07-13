@@ -19,7 +19,7 @@ from pathlib import Path
 import numpy as np
 
 import vet_map
-from tests.helpers import TEST_PX_UM, fast_test_cfg, inject_glyphs, noise_canvas
+from tests.helpers import TEST_PX_UM, fast_test_cfg, inject_glyphs, make_fast_cfg, noise_canvas
 
 BBOX_SIDE = 240
 # Within card_config.letter_scale_px_range(TEST_PX_UM) = (30, 80): individual
@@ -132,14 +132,22 @@ class TestLetterEnergyOnPureNoise(unittest.TestCase):
     def test_fails_on_pure_noise_across_seeds(self):
         # v0.2: the verdict is the absolute overall rule (energy AND
         # structure AND bimodality). Pure noise must fail it on every seed.
+        # v0.4: mid-gray noise (mean 0.5, no real dark background) also
+        # trips the render-family gate, which raises VetMapError instead of
+        # returning a result -- an equally valid "not verified as real
+        # text" outcome for this test's purposes, so it counts the same way.
         cfg = fast_test_cfg(n_null=100)
         n_seeds = 20
         fails = 0
         for seed in range(n_seeds):
             rng = np.random.default_rng(seed)
             raw = noise_canvas(rng, CANVAS, CANVAS) * 255.0
-            result = vet_map.run_all_checks(raw, CENTER_BBOX, TEST_PX_UM, cfg=cfg)
-            if not result["overall"]["pass"]:
+            try:
+                result = vet_map.run_all_checks(raw, CENTER_BBOX, TEST_PX_UM, cfg=cfg)
+                rejected = not result["overall"]["pass"]
+            except vet_map.VetMapError:
+                rejected = True
+            if rejected:
                 fails += 1
         rate = fails / n_seeds
         self.assertGreaterEqual(rate, 0.95, f"false-positive rate too high on pure noise: {1 - rate:.2%} passed")
@@ -200,6 +208,69 @@ class TestSubLetterWindowGuard(unittest.TestCase):
         self.assertIn("overall", result)
 
 
+class TestRenderFamilyGuard(unittest.TestCase):
+    """v0.4: the SUBMITTED MAP's whole-frame tonal profile must resemble
+    the raw ink-detection render family the four verdict gates were
+    calibrated on (real dark background), or the tool refuses a verdict
+    instead of risking a misleading FAIL -- see card_config.py and
+    CALIBRATION.md "The render-family guard". Provenance: a real claimant's
+    PHerc 0139 photo-style composite (papyrus-texture background painted
+    with partial-opacity ink, no true dark floor) produced a flat FAIL on
+    windows a human had already read as clear text.
+    """
+
+    @staticmethod
+    def _dark_floor_canvas(rng, size, dark_frac=0.5):
+        """Stand-in for a raw ink-detection map's whole-frame tonal
+        profile: a real dark floor (confidently-blank background), like a
+        percentile-stretched ds8 render actually has."""
+        base = noise_canvas(rng, size, size, mean=0.5, std=0.1)
+        base[rng.random(base.shape) < dark_frac] = 0.0
+        return base
+
+    @staticmethod
+    def _bright_floor_canvas(rng, size):
+        """Stand-in for a photo-style composite: never gets genuinely
+        dark, like a papyrus-texture background under partial-opacity
+        ink."""
+        return noise_canvas(rng, size, size, mean=0.75, std=0.08)
+
+    def test_raw_family_with_real_dark_floor_evaluates_normally(self):
+        rng = np.random.default_rng(1)
+        bbox = (900, 900, 1100, 1100)
+        base = self._dark_floor_canvas(rng, 2000)
+        map01 = inject_glyphs(base, bbox, rng, glyph_size=40, n_glyphs=8,
+                               stroke_width=3, amplitude=0.9, blur_sigma=1.2)
+        result = vet_map.run_all_checks(map01, bbox, TEST_PX_UM)
+        rf = result["checks"]["render_family"]
+        self.assertFalse(rf.get("skipped", False), rf)
+        self.assertTrue(rf["pass"], rf)
+
+    def test_photo_style_composite_raises_render_family_error(self):
+        rng = np.random.default_rng(2)
+        bbox = (900, 900, 1100, 1100)
+        base = self._bright_floor_canvas(rng, 2000)
+        map01 = inject_glyphs(base, bbox, rng, glyph_size=40, n_glyphs=8,
+                               stroke_width=3, amplitude=0.2, blur_sigma=1.2)
+        with self.assertRaises(vet_map.VetMapError) as ctx:
+            vet_map.run_all_checks(map01, bbox, TEST_PX_UM)
+        self.assertIn("render family", str(ctx.exception))
+
+    def test_small_crop_of_photo_style_skips_guard(self):
+        # Below RENDER_FAMILY_MIN_CONTEXT_RATIO: not enough surrounding
+        # context to trust the signal, so this must NOT raise -- the guard
+        # is scoped to whole-map submissions, not the tight claim crops the
+        # tool's own Quickstart recommends submitting.
+        rng = np.random.default_rng(3)
+        bbox = (0, 0, 240, 240)
+        base = self._bright_floor_canvas(rng, 260)  # only a sliver of margin
+        map01 = inject_glyphs(base, bbox, rng, glyph_size=40, n_glyphs=8,
+                               stroke_width=3, amplitude=0.2, blur_sigma=1.2)
+        result = vet_map.run_all_checks(map01, bbox, TEST_PX_UM)
+        rf = result["checks"]["render_family"]
+        self.assertTrue(rf.get("skipped", False), rf)
+
+
 class TestDegenerateInputs(unittest.TestCase):
     """CHECK 3 (task spec): all-zero map, saturated bbox, border bbox,
     bbox > map, tiny map.
@@ -234,21 +305,30 @@ class TestDegenerateInputs(unittest.TestCase):
         self.assertTrue(result["checks"]["degenerate"]["blank"])
 
     def test_border_bbox_top_left_is_handled_not_errored(self):
+        # This test is about band-pass boundary/padding correctness at a
+        # true map corner, not render-family classification -- the
+        # mid-gray synthetic canvas has no reason to carry a realistic
+        # dark-background floor, so the render-family gate is disabled
+        # locally rather than papering over the fixture's own tonal range.
+        cfg = make_fast_cfg(N_NULL_SAMPLES=100, MIN_NULL_SAMPLES=30,
+                             MAX_NULL_SAMPLE_ATTEMPTS=5000, DARK_FRACTION_MIN=0.0)
         rng = np.random.default_rng(3)
         base = noise_canvas(rng, CANVAS, CANVAS, std=0.06)
         bbox = (0, 0, BBOX_SIDE, BBOX_SIDE)  # touches the top-left border exactly
         map01 = inject_glyphs(base, bbox, rng, GLYPH_SIZE, n_glyphs=8, stroke_width=3, amplitude=0.9)
-        result = vet_map.run_all_checks(map01, bbox, TEST_PX_UM, cfg=self.cfg)
+        result = vet_map.run_all_checks(map01, bbox, TEST_PX_UM, cfg=cfg)
         self.assertIn("letter_energy", result["checks"])
         self.assertIn("structure", result["checks"])
         self.assertFalse(result["checks"]["letter_energy"].get("skipped", False))
 
     def test_border_bbox_bottom_right_is_handled_not_errored(self):
+        cfg = make_fast_cfg(N_NULL_SAMPLES=100, MIN_NULL_SAMPLES=30,
+                             MAX_NULL_SAMPLE_ATTEMPTS=5000, DARK_FRACTION_MIN=0.0)
         rng = np.random.default_rng(4)
         base = noise_canvas(rng, CANVAS, CANVAS, std=0.06)
         bbox = (CANVAS - BBOX_SIDE, CANVAS - BBOX_SIDE, CANVAS, CANVAS)  # touches bottom-right exactly
         map01 = inject_glyphs(base, bbox, rng, GLYPH_SIZE, n_glyphs=8, stroke_width=3, amplitude=0.9)
-        result = vet_map.run_all_checks(map01, bbox, TEST_PX_UM, cfg=self.cfg)
+        result = vet_map.run_all_checks(map01, bbox, TEST_PX_UM, cfg=cfg)
         self.assertIn("letter_energy", result["checks"])
         self.assertIn("structure", result["checks"])
         self.assertFalse(result["checks"]["letter_energy"].get("skipped", False))
@@ -277,7 +357,18 @@ class TestCLIIntegration(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             d = Path(d)
             rng = np.random.default_rng(7)
-            map01 = noise_canvas(rng, 800, 800, std=0.08)  # see CANVAS comment above re: null-sampling headroom
+            # A plain rescale doesn't help here: run_all_checks re-stretches
+            # the map's own min/max to [0, 1] (normalize01), which undoes
+            # any uniform scaling of a symmetric distribution. Floor a real
+            # fraction of pixels to the array's true minimum instead --
+            # this is what survives the re-stretch, and it's also a more
+            # honest stand-in for a real map's confidently-blank background
+            # than pure mid-gray noise. This test is CLI plumbing ("does
+            # status become ok"), not a render-family fixture, and the CLI
+            # has no config-injection point to disable the gate locally the
+            # way the direct-call tests do.
+            map01 = noise_canvas(rng, 800, 800, std=0.08)
+            map01[rng.random(map01.shape) < 0.45] = 0.0
             map_path = d / "claim_map.npy"
             np.save(map_path, map01)
             out_path = d / "verdict.json"

@@ -9,9 +9,18 @@ same-map percentile survives only as optional, non-gating context
     python vet_map.py --map claim_map.npy --bbox x0,y0,x1,y1 \\
         [--px-um 8.0] [--seed 0] [--local-rarity] --out verdict.json
 
-Four checks run against the claimed bbox (see card_config.py for every
-threshold's provenance):
+Four VERDICT checks run against the claimed bbox, gated behind one
+whole-map PRE-check (see card_config.py for every threshold's provenance):
 
+  render_family        -- v0.4: does the SUBMITTED MAP look like the raw
+                          ink-detection render family the four checks below
+                          were calibrated on? Raises "cannot evaluate" (not
+                          a misleading FAIL) on inputs like photo-style
+                          composites, which fail the calibrated gates for
+                          reasons that have nothing to do with whether
+                          there's real text. Skipped -- not gating -- when
+                          the map isn't large enough relative to the bbox
+                          for the signal to be trustworthy.
   degenerate           -- hard fail if the bbox is blank, saturated, or the
                           whole map is constant.
   letter_energy        -- band-pass (difference-of-Gaussians) energy at the
@@ -36,10 +45,10 @@ Two distinct outcomes, both always written as JSON to --out:
                      field for the actual verdict (which may be False --
                      that is a normal, informative result, not an error).
   status "error" -- the input could not be evaluated at all (bad bbox,
-                     map too small, unreadable file). CLI exit code 2.
-                     overall.pass is always False in this case too, so
-                     downstream tooling that only looks at overall.pass
-                     never has to special-case this.
+                     map too small, unreadable file, wrong render family).
+                     CLI exit code 2. overall.pass is always False in this
+                     case too, so downstream tooling that only looks at
+                     overall.pass never has to special-case this.
 
 This module is written to be imported, not just run: vet_pipeline.py
 reuses check_letter_energy/sample_null_bboxes/etc. directly rather than
@@ -414,6 +423,45 @@ def check_contrast_bimodality(map01: np.ndarray, bbox: Bbox, cfg=card_config) ->
 
 
 # ---------------------------------------------------------------------------
+# CHECK: render_family (whole-map sniff test, v0.4 -- see card_config.py)
+# ---------------------------------------------------------------------------
+
+def dark_fraction(map01: np.ndarray, cfg=card_config) -> float:
+    """Fraction of the WHOLE array's pixels below a fixed normalized
+    darkness cut. A property of the submitted map's render family, not of
+    the claimed bbox -- see card_config.DARK_FRACTION_MIN."""
+    return float(np.mean(map01 < cfg.DARK_FRACTION_DARKNESS_CUT))
+
+
+def check_render_family(map01: np.ndarray, bbox: Bbox, cfg=card_config) -> dict:
+    """Sniffs whether the SUBMITTED MAP (not just the claimed bbox) looks
+    like the raw ink-detection-map render family the four verdict gates
+    were calibrated on, or something else (e.g. a photo-style composite --
+    see CALIBRATION.md). Skipped when the map isn't large enough relative
+    to the bbox to trust the signal (card_config.RENDER_FAMILY_MIN_CONTEXT_RATIO)."""
+    x0, y0, x1, y1 = bbox
+    bbox_area = max(1, (x1 - x0) * (y1 - y0))
+    ratio = map01.size / bbox_area
+    if ratio < cfg.RENDER_FAMILY_MIN_CONTEXT_RATIO:
+        return {
+            "pass": True,
+            "skipped": True,
+            "reason": (
+                f"submitted map is only {ratio:.1f}x the claimed bbox area "
+                f"(need >= {cfg.RENDER_FAMILY_MIN_CONTEXT_RATIO:.0f}x); not enough "
+                "surrounding context to trust the render-family signal"
+            ),
+        }
+    value = dark_fraction(map01, cfg)
+    return {
+        "pass": bool(value >= cfg.DARK_FRACTION_MIN),
+        "value": value,
+        "threshold": cfg.DARK_FRACTION_MIN,
+        "context_ratio": ratio,
+    }
+
+
+# ---------------------------------------------------------------------------
 # CHECK: degenerate / saturation (hard fail, no null sampling)
 # ---------------------------------------------------------------------------
 
@@ -473,8 +521,28 @@ def run_all_checks(
     map_is_constant = bool(np.max(raw) == np.min(raw))
     map01 = np.zeros_like(raw, dtype=np.float64) if map_is_constant else normalize01(raw)
 
+    render_family = None
+    if not map_is_constant:
+        render_family = check_render_family(map01, bbox, cfg)
+        if not render_family.get("skipped") and not render_family["pass"]:
+            raise VetMapError(
+                "cannot evaluate: this input's overall tonal profile does not match "
+                "the render family the four verdict gates were calibrated on (raw "
+                "single-channel ink-detection maps). Whole-map dark-pixel fraction "
+                f"{render_family['value']:.3f} is below {cfg.DARK_FRACTION_MIN} "
+                "(78 real raw-family maps measured >=0.42, three scrolls). This "
+                "usually means the image is a photo-style composite, colorized "
+                "rendering, or otherwise not the model's raw probability output -- "
+                "re-run against the underlying ink-detection map if you have one. "
+                f"(context ratio {render_family['context_ratio']:.1f}x; see "
+                "CALIBRATION.md)"
+            )
+
     degenerate = check_degenerate(map01, bbox, map_is_constant, cfg)
-    checks = {"degenerate": degenerate}
+    checks = {}
+    if render_family is not None:
+        checks["render_family"] = render_family
+    checks["degenerate"] = degenerate
 
     if not degenerate["pass"]:
         skip = {"pass": False, "skipped": True, "reason": "skipped: degenerate input, see 'degenerate' check"}
