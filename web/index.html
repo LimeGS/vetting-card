@@ -1,0 +1,869 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vetting Card — anti-pareidolia check for ink-map claims</title>
+<meta name="description" content="Automated anti-pareidolia checks for 'I found letters' claims on Vesuvius Challenge ink maps. Runs entirely in your browser — the image never leaves your machine.">
+<!-- connect-src 'self' enforces the "your image never leaves your machine" promise at
+     the platform level. unsafe-eval + wasm-unsafe-eval are required by Pyodide;
+     unsafe-inline by the single-file design (all CSS/JS inline). -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="theme-color" content="#170f09">
+<meta property="og:title" content="Vetting Card — Vesuvius Challenge community tool">
+<meta property="og:description" content="Drop your ink map, mark the claim, get a calibrated pass/fail card. No upload, no server.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📜</text></svg>">
+<link href="vendor/fonts/fonts.css" rel="stylesheet">
+<style>
+:root{
+  --bg:#170f09; --well:#0c0805; --panel:#1e140b; --panel-2:#2a1d10; --panel-3:#221610;
+  --line:#2f2013; --line-2:#382718; --line-3:#3a2818;
+  --ink:#ece3d6; --ink-hi:#f7f1e6; --ink-em:#e4d7c2;
+  --mut:#c7b9a0; --muter:#a9997f; --faint:#8a7c65; --faint-2:#7a6a51; --faintest:#5f4f3a;
+  --amber:#e8a33d; --amber-kicker:#d99a3f; --amber-hover:#f2b955; --on-amber:#170f09;
+  --pass:#8fd9a4; --pass-dot:#6fb583; --pass-dim:rgba(111,181,131,.15); --pass-line:rgba(111,181,131,.35);
+  --fail:#e39696; --fail-dim:rgba(227,150,150,.15); --fail-line:rgba(227,150,150,.35);
+  --warn:#d9b25c;
+  --r:10px; --serif:'Fraunces',serif; --sans:'Inter',-apple-system,sans-serif; --mono:'JetBrains Mono',ui-monospace,monospace;
+}
+*{box-sizing:border-box;margin:0}
+html{color-scheme:dark; overflow-x:hidden}
+body{
+  background:radial-gradient(ellipse 1400px 900px at 15% -10%, #241609 0%, var(--bg) 55%);
+  color:var(--ink); font:16px/1.55 var(--sans);
+  min-height:100vh; padding:0 20px 60px; overflow-x:hidden;
+}
+.wrap{max-width:1360px;margin:0 auto}
+::selection{background:rgba(232,163,61,.35)}
+*:focus-visible{outline:2px solid var(--amber); outline-offset:2px; border-radius:4px}
+
+@keyframes pulse{50%{opacity:.35}}
+@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+@keyframes modalIn{from{opacity:0;transform:scale(.97) translateY(8px)}to{opacity:1;transform:scale(1) translateY(0)}}
+@media(prefers-reduced-motion:no-preference){ .dot:not(.ready):not(.err){animation:pulse 1.2s ease-in-out infinite} }
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{transition:none!important;animation:none!important}
+  html{scroll-behavior:auto}
+}
+
+/* ── header ── */
+header{padding:28px 0 20px; display:flex; align-items:flex-end; justify-content:space-between; gap:20px; flex-wrap:wrap}
+.headline{max-width:760px}
+.kicker{font:600 14px/1 var(--mono); letter-spacing:.14em; text-transform:uppercase; color:var(--amber-kicker); margin-bottom:12px}
+h1{font:600 clamp(34px,4vw,44px)/1.1 var(--serif); color:var(--ink-hi); letter-spacing:-.01em; text-wrap:balance}
+.sub{color:var(--muter); max-width:64ch; margin-top:10px; font-size:17px; text-wrap:pretty}
+.sub strong{color:var(--ink-em); font-weight:500}
+.headctl{display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding-bottom:2px}
+/* No white-space:nowrap here: boot status strings are long ("downloading
+   python runtime · 34 / 78 MB (first visit only)") and must wrap on a
+   narrow viewport rather than silently clip under overflow-x:hidden. */
+.runtime{display:flex; flex-wrap:wrap; align-items:center; gap:8px; font:400 14.5px var(--mono); color:var(--faint)}
+.runtime span:not(.dot){min-width:0}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--warn);flex:none; box-shadow:0 0 8px rgba(217,178,92,.5)}
+.dot.ready{background:var(--pass-dot); box-shadow:0 0 8px rgba(111,181,131,.6)} .dot.err{background:var(--fail); box-shadow:none}
+.bootbar{flex-basis:140px; height:3px; border-radius:2px; background:var(--line); overflow:hidden}
+.bootbar .bootfill{height:100%; width:0%; border-radius:2px; background:var(--amber); transition:width .3s ease}
+.bootbar[hidden]{display:none}
+button.howbtn{font:600 15px var(--mono); color:var(--amber); background:rgba(232,163,61,.1);
+  border:1px solid rgba(232,163,61,.35); border-radius:7px; padding:9px 16px; cursor:pointer; white-space:nowrap}
+button.howbtn:hover{background:rgba(232,163,61,.18); border-color:rgba(232,163,61,.5)}
+button.howbtn:disabled{opacity:.4; cursor:not-allowed}
+
+/* ── dashboard grid ── */
+.dashboard{display:grid; grid-template-columns:290px minmax(0,1fr) 380px; gap:24px; align-items:start}
+@media(max-width:1180px){ .dashboard{grid-template-columns:1fr} }
+.col{display:flex; flex-direction:column; gap:14px; min-width:0}
+.col-head{display:flex; align-items:center; gap:10px; flex-wrap:wrap}
+.col-head .n{font:700 13.5px var(--mono); color:var(--faint-2); background:var(--panel-2); border-radius:4px; padding:3px 8px; flex:none}
+.col-head .t{font-size:18px; font-weight:600; color:var(--mut)}
+.col-head .hint{margin-left:auto; font:400 14px var(--mono); color:var(--faint-2); white-space:nowrap}
+
+/* ── column A: load map ── */
+button{font-family:inherit; cursor:pointer}
+.drop{
+  flex-shrink:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px;
+  padding:28px 18px; background:var(--well); border:1.5px dashed var(--line-3); border-radius:var(--r);
+  text-align:center; transition:border-color .15s, background .15s;
+}
+.drop.over{border-color:var(--amber); background:#181209}
+.drop svg{opacity:.55; flex-shrink:0; width:30px; height:30px}
+.drop .big{font-size:17px; font-weight:600; color:var(--ink-em); line-height:1.4}
+.drop .lil{font-size:14.5px; color:var(--faint-2); line-height:1.5}
+.divider{display:flex; align-items:center; gap:8px; color:var(--faintest); font:400 14px var(--mono)}
+.divider::before,.divider::after{content:"";flex:1;height:1px;background:var(--line)}
+button.linkish{
+  background:none; border:none; padding:0; text-align:left; line-height:1.5;
+  font-size:16px; font-weight:600; color:var(--amber);
+  text-decoration:underline; text-decoration-color:rgba(232,163,61,.35); text-underline-offset:3px;
+}
+button.linkish:hover{color:var(--amber-hover)}
+button.linkish:disabled{opacity:.4; cursor:not-allowed; text-decoration:none}
+.colfoot{margin-top:auto; padding-top:16px; border-top:1px solid var(--line);
+  font:400 14px var(--mono); color:var(--faintest); line-height:1.9}
+.colfoot a{color:var(--faint)}
+.colfoot b{color:var(--faint)}
+
+/* ── column B: mark region ── */
+.canvas-wrap{position:relative; border-radius:var(--r); overflow:hidden; background:var(--well); border:1px solid var(--line)}
+/* max-width (not width): 100% only ever shrinks the canvas to fit a
+   narrower container -- it never stretches it back up past the intrinsic
+   pixel size loadImage() already computed to respect the height cap. With
+   plain width:100% a very tall/narrow source (e.g. a full wrap strip) got
+   re-stretched to the column's full width, dragging its rendered height
+   back up to thousands of px and burying every other column below it. */
+canvas{display:block; max-width:100%; height:auto; cursor:crosshair; touch-action:none}
+.hint{font-size:16px; color:var(--faint); margin-top:2px}
+.manual{margin-top:2px}
+.manual summary{font-size:16px; color:var(--faint-2); cursor:pointer; list-style:none; display:flex; align-items:center; gap:8px}
+.manual summary::-webkit-details-marker{display:none}
+.manual summary:hover{color:var(--mut)}
+.manual .caret{display:inline-block; font-size:10px; transition:transform .15s}
+.manual[open] .caret{transform:rotate(90deg)}
+.mrow{display:flex; flex-wrap:wrap; gap:10px; margin-top:10px; animation:fadeIn .15s ease}
+.mrow label{font:500 14px var(--mono); color:var(--muter); display:flex; align-items:center; gap:7px}
+.mrow input{width:104px; font:500 16px var(--mono); color:var(--ink); background:var(--well);
+  border:1px solid var(--line-3); border-radius:6px; padding:8px 10px}
+.bbox-read{font:400 16px var(--mono); color:var(--muter); margin-top:2px}
+.bbox-read b{color:var(--ink-em); font-weight:500}
+.bbox-warn{color:var(--warn)}
+
+/* ── column C: scale + verdict ── */
+.scalebox{background:var(--panel); border:1px solid var(--line); border-radius:9px; padding:16px; flex-shrink:0}
+.scalerow{display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:12px}
+.scalerow label{font:400 15px var(--mono); color:var(--faint-2); text-transform:none; white-space:nowrap}
+input[type=number]{
+  font:500 18px var(--mono); color:var(--ink); background:var(--well);
+  border:1px solid var(--line-2); border-radius:6px; padding:9px 12px;
+}
+#pxum{width:110px; color:var(--amber-hover); font-weight:600; font-size:19px; text-align:right}
+.presets{display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-bottom:13px}
+.preset{font:600 14.5px var(--mono); color:var(--mut); background:var(--panel-2);
+  border:1px solid var(--line-3); border-radius:6px; padding:7px 11px; transition:border-color .15s, background .15s, color .15s}
+.preset:hover{border-color:#5a4028; background:#3a2818; color:var(--amber-hover)}
+.preset[aria-pressed=true]{border-color:var(--amber); background:#3a2818; color:var(--amber-hover)}
+.preset small{color:var(--faint-2)}
+.preset[aria-pressed=true] small{color:var(--faint)}
+.bbox-chip{font:400 14px var(--mono); color:var(--faint-2); margin-left:2px; white-space:nowrap}
+button.primary{width:100%; background:var(--amber); border:none; border-radius:6px; color:var(--on-amber);
+  font-weight:700; font-size:17px; padding:12px 0}
+button.primary:hover{background:var(--amber-hover)}
+button.primary:disabled{opacity:.4; cursor:not-allowed}
+
+.banner{display:flex; align-items:center; gap:13px; border-radius:9px; padding:14px 16px; flex-shrink:0}
+.banner .word{font:600 28px var(--serif); flex-shrink:0}
+.banner .why{font-size:14.5px; line-height:1.4}
+.banner.pass{background:linear-gradient(135deg,#264d34,#1c3d2a); border:1px solid #3a6b4c; color:var(--pass)}
+.banner.pass .why{color:#bfe0c9}
+.banner.fail{background:linear-gradient(135deg,#4d2626,#3d1c1c); border:1px solid #6b3a3a; color:var(--fail)}
+.banner.fail .why{color:#e0bfbf}
+.banner.err{background:#3d2f12; border:1px solid #6b5a2e; color:var(--warn)}
+
+/* Always two rows (name+chip, then the full-width meter/desc): at any
+   column width narrow enough to matter here, trying to also fit a meter
+   bar and value text on the SAME line as the check name only works by
+   shrinking everything back down to the illegible sizes this was written
+   to fix. One consistent, spacious layout beats a width-dependent one. */
+.checks{display:flex; flex-direction:column; gap:8px}
+.check{background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:11px 14px 12px;
+  display:grid; grid-template-columns:1fr auto; grid-template-areas:"name chip" "mid mid"; gap:4px 10px; align-items:center}
+.check .name{grid-area:name; font:700 15px/1.3 var(--mono); color:var(--ink-em)}
+.check .mid{grid-area:mid; min-width:0; margin-top:4px}
+.check .chip{grid-area:chip}
+.check .desc{font-size:14.5px; color:var(--faint-2); line-height:1.4}
+.meter-row{display:flex; align-items:center; gap:10px}
+.meter{position:relative; height:5px; background:var(--line); border-radius:3px; flex:1; min-width:24px}
+.meter .fill{position:absolute; top:0; bottom:0; left:0; border-radius:3px; background:var(--faint)}
+.meter .fill.ok{background:var(--pass-dot)} .meter .fill.bad{background:var(--fail)}
+.meter .tick{position:absolute; top:-3px; bottom:-3px; width:2px; background:var(--amber); border-radius:1px}
+.meter-vals{font:400 14px var(--mono); color:var(--faint-2); white-space:nowrap; flex:none}
+.meter-vals b{color:var(--muter); font-weight:500}
+.chip{font:700 12.5px var(--mono); letter-spacing:.04em; padding:3px 9px; border-radius:4px; white-space:nowrap}
+.chip.pass{background:var(--pass-dim); color:var(--pass); border:1px solid var(--pass-line)}
+.chip.fail{background:var(--fail-dim); color:var(--fail); border:1px solid var(--fail-line)}
+.chip.na{background:var(--well); color:var(--faint)}
+.actions{display:flex; gap:8px; flex-shrink:0}
+.actions button{flex:1; font-size:15px; font-weight:700; padding:10px 0; border-radius:6px}
+.actions button:not(.primary){background:none; border:1px solid var(--line-2); color:var(--mut); font-weight:600}
+.actions button:not(.primary):hover{border-color:var(--line-3)}
+.meaning{flex-shrink:0; background:rgba(232,163,61,.06); border:1px solid rgba(232,163,61,.25); border-radius:8px;
+  padding:13px 15px; font-size:15px; line-height:1.55; color:var(--muter)}
+.meaning b{color:var(--ink-em)}
+
+/* ── modal ── */
+.overlay{position:fixed; inset:0; z-index:100; background:rgba(10,6,3,.7); backdrop-filter:blur(3px);
+  display:flex; justify-content:center; align-items:flex-start; overflow-y:auto; overflow-x:hidden; padding:40px 18px}
+.overlay.hidden{display:none}
+.sheet{position:relative; width:100%; max-width:min(980px, calc(100vw - 28px)); min-width:0;
+  background:#1c1109; border:1px solid var(--line-3); border-radius:14px;
+  box-shadow:0 30px 80px rgba(0,0,0,.5); margin:auto; animation:modalIn .18s ease}
+.sheetclose{position:absolute; top:16px; right:16px; z-index:2; width:36px; height:36px; padding:0;
+  border-radius:8px; background:var(--panel-2); border:1px solid var(--line-3); color:var(--mut); font-size:16px}
+.sheetclose:hover{background:#3a2818; color:var(--ink)}
+.sheet-in{padding:34px 38px 40px; min-width:0; overflow-wrap:break-word}
+@media(max-width:560px){.overlay{padding:20px 10px}.sheet-in{padding:24px 18px 30px}.sheet-in h2{font-size:26px}}
+.sheet-in h2{font:600 32px/1.15 var(--serif); color:var(--ink-hi); margin-bottom:10px}
+.sheet-in .lede{color:var(--faint); font-size:16.5px; line-height:1.65; margin-bottom:22px}
+.sheet-in h3{font:700 14.5px var(--mono); letter-spacing:.1em; text-transform:uppercase; color:var(--amber); margin-bottom:12px}
+.sheet-in p{color:var(--muter); font-size:16.5px; line-height:1.65; margin:12px 0}
+.sheet-in p b, .sheet-in li b{color:var(--ink-em); font-weight:600}
+.sheet-in code{font:400 15px var(--mono); background:var(--panel-2); color:var(--mut); padding:2px 8px; border-radius:4px}
+.sheet-in ul{margin:0 0 16px; padding:0; list-style:none; display:flex; flex-direction:column; gap:9px}
+.sheet-in li{color:var(--muter); font-size:16px; line-height:1.6}
+.callout{background:rgba(232,163,61,.07); border:1px solid rgba(232,163,61,.25); border-radius:10px;
+  padding:17px 19px; margin-bottom:22px; font-size:16.5px; line-height:1.65; color:var(--mut)}
+.callout strong{color:var(--amber-hover)}
+.numbers{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin-bottom:22px}
+.numbers .n{background:var(--panel-2); border:1px solid var(--line-3); border-radius:9px; padding:14px 16px}
+.numbers .n .big{font:600 28px var(--serif); color:var(--ink-hi)}
+.numbers .n .lbl{font-size:13.5px; color:var(--faint); line-height:1.4; margin-top:4px}
+.gates{display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:22px}
+@media(max-width:700px){.gates{grid-template-columns:1fr}}
+.gate{background:var(--panel-3); border:1px solid var(--line-3); border-radius:10px; padding:17px 18px}
+.gate-h{display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:10px}
+.gate-h .g-name{font:700 17px var(--mono); color:var(--ink-em)}
+.gate-h .g-thr{font:700 13px var(--mono); border-radius:4px; padding:4px 9px; white-space:nowrap}
+.gate-h .g-thr.hardfail{color:var(--fail); background:var(--fail-dim); border:1px solid var(--fail-line)}
+.gate-h .g-thr.calibrated{color:var(--pass); background:var(--pass-dim); border:1px solid var(--pass-line)}
+.gate .formula{font:400 14px var(--mono); color:var(--mut); background:var(--well); border-radius:5px;
+  padding:9px 11px; margin-bottom:10px; overflow-x:auto}
+.gate .why{font-size:16px; color:var(--faint); line-height:1.6}
+.sheet-in .src{margin-top:22px; font-size:15px; color:var(--faintest)}
+.sheet-in .src a{color:var(--amber)}
+.hidden{display:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="headline">
+    <div class="kicker">Vesuvius Challenge · Community Tool</div>
+    <h1>Vetting Card</h1>
+    <p class="sub">An automated anti-pareidolia check for <strong>“I found letters”</strong> claims on ink maps.
+    Drop your map, mark the region, and get an attachable pass/fail card in seconds — everything runs
+    <strong>in your browser</strong>.</p>
+  </div>
+  <div class="headctl">
+    <div class="runtime"><span class="dot" id="dot"></span><span id="status">loading python runtime…</span>
+      <div class="bootbar" id="bootbar" role="progressbar" aria-label="runtime download"
+           aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="bootfill" id="bootfill"></div></div>
+    </div>
+    <button class="howbtn" id="howBtn" disabled>How it works ↗</button>
+  </div>
+</header>
+
+<div class="overlay hidden" id="overlay">
+  <div class="sheet" role="dialog" aria-modal="true" aria-label="How the vetting card works">
+    <button class="sheetclose" id="howClose" aria-label="close">✕</button>
+    <div class="sheet-in" id="howBody"></div>
+  </div>
+</div>
+
+<div class="dashboard">
+
+  <!-- COLUMN A: load map -->
+  <div class="col">
+    <div class="col-head"><span class="n">01</span><span class="t">Load your ink map</span></div>
+
+    <div class="drop" id="drop" tabindex="0" role="button" aria-label="load ink map image">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+        <path d="M12 16V4M12 4L7 9M12 4L17 9" stroke="var(--amber-kicker)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M4 16V18C4 19.1 4.9 20 6 20H18C19.1 20 20 19.1 20 18V16" stroke="var(--amber-kicker)" stroke-width="1.6" stroke-linecap="round"/>
+      </svg>
+      <div class="big">Drop a PNG or JPG,<br>or click to choose</div>
+      <div class="lil">the model's ink-probability map (not raw CT) — a crop around your claim is enough</div>
+    </div>
+    <input type="file" id="file" accept="image/png,image/jpeg" class="hidden">
+
+    <div class="divider">or</div>
+    <button class="linkish" id="sampleBtn" disabled>try a real sample — a verified clear-text window from PHerc 0139</button>
+
+    <div class="colfoot" id="colfoot">
+      vetting-card — same code, same thresholds as the CLI<br>
+      config <b id="hashline2"></b><br>
+      ~1s per check · no upload · <a href="https://github.com/LimeGS/vetting-card" id="repolink">source &amp; calibration</a>
+    </div>
+  </div>
+
+  <!-- COLUMN B: mark region -->
+  <div class="col">
+    <div class="col-head">
+      <span class="n">02</span><span class="t">Mark the claimed letters &amp; set the scale</span>
+      <span class="hint">drag box to redraw</span>
+    </div>
+
+    <div class="canvas-wrap"><canvas id="cv" width="10" height="10" role="img"
+      aria-label="ink map preview — drag on the image (or use the manual coordinate fields below) to mark the claimed letters"></canvas></div>
+    <div class="bbox-read" id="bboxRead">no box yet</div>
+
+    <details class="manual"><summary><span class="caret">▶</span> enter box coordinates manually (e.g. to verify someone else's card)</summary>
+      <div class="mrow">
+        <label>x0 <input type="number" id="mx0" inputmode="numeric" min="0"></label>
+        <label>y0 <input type="number" id="my0" inputmode="numeric" min="0"></label>
+        <label>x1 <input type="number" id="mx1" inputmode="numeric" min="0"></label>
+        <label>y1 <input type="number" id="my1" inputmode="numeric" min="0"></label>
+      </div>
+    </details>
+  </div>
+
+  <!-- COLUMN C: scale + verdict -->
+  <div class="col">
+    <div class="scalebox">
+      <div class="scalerow">
+        <label for="pxum">µm per pixel</label>
+        <input type="number" id="pxum" step="0.01" min="0.1" inputmode="decimal" placeholder="e.g. 19.2">
+      </div>
+      <div class="presets" role="group" aria-label="Common ink-map resolutions">
+        <button type="button" class="preset" data-px="19.2">19.2 <small>ds8</small></button>
+        <button type="button" class="preset" data-px="7.91">7.91 <small>full-res</small></button>
+        <button type="button" class="preset" data-px="2.4">2.4 <small>native</small></button>
+        <span class="bbox-chip" id="bboxChip"></span>
+      </div>
+      <button class="primary" id="runBtn" disabled>Run the checks</button>
+    </div>
+
+    <div class="col-head"><span class="n">03</span><span class="t">Verdict</span></div>
+    <div id="verdictArea"><p class="hint">run the checks to see the card here.</p></div>
+  </div>
+
+</div>
+</div>
+
+<script src="vendor/pyodide/pyodide.js"></script>
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const SCROLL = matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
+const state = { img:null, name:null, gray:null, w:0, h:0, scale:1, bbox:null, drawing:null, py:null, ready:false };
+
+function setStatus(msg, cls){ $("status").textContent = msg; $("dot").className = "dot" + (cls?" "+cls:""); }
+
+/* ── How it works panel (numbers injected from the live card_config) ── */
+function fillHowItWorks(m){
+  const [lo, hi] = m.letter_mm;
+  $("howBody").innerHTML = `
+    <h2>How the vetting card works</h2>
+    <p class="lede">Four checks, no neural network, every threshold calibrated on real human-labeled
+    ink maps. The numbers below are read live from this build's <code>card_config.py</code>
+    (hash <b style="color:var(--amber)">${m.hash}</b>) — this panel cannot drift from the actual rules.</p>
+
+    <div class="callout"><strong>Why it exists — and why it was rebuilt.</strong> v0.1 hand-picked its
+    thresholds on synthetic data and, when finally tested on real maps, <b>rejected verified
+    clear text 5 out of 5 times</b>. Two structural bugs: the verdict asked "are you in the top
+    1% of THIS map?" (wrong bar when the whole map is text), and its structure statistic counted
+    letter-sized components — which on ds8 maps is <b>anti-predictive</b> (real letters fuse into
+    a few blobs; fiber fragments into many), measured AUROC <b>0.11</b>. v0.2 replaced the verdict
+    with the absolute gates below.</div>
+
+    <h3>The calibration set</h3>
+    <p>516 windows across <b>three scrolls</b> (0139, Scroll 1, and Scroll 4 / PHerc 1667, the read scroll), each with an
+    explicit-provenance label. Their roles are deliberately kept separate:</p>
+    <ul>
+      <li>— <b>324 fit windows</b> — 174 positives (54 PHerc 0139 clear text + 120 reviewer-confirmed
+      Scroll 1) and 150 clean negatives (50 fiber + 100 far-from-text background). A frozen 70/30
+      split fitted thresholds on train only.</li>
+      <li>— <b>96 external validation windows</b> — 36 dense-wrap positives and 60 published-lacunae
+      negatives from Scroll 4. They did not re-fit the thresholds.</li>
+      <li>— <b>96 context/report-only windows</b> — 87 implied Scroll-1 negatives and 9 PHerc 0139
+      possible-text windows. They are disclosed but never tune or score a gate.</li>
+    </ul>
+    <div class="numbers">
+      <div class="n"><div class="big">55/56</div><div class="lbl">held-out letters pass (fitted scrolls)</div></div>
+      <div class="n"><div class="big">0/60</div><div class="lbl">read-scroll lacunae pass (ground truth negatives)</div></div>
+      <div class="n"><div class="big">27/36</div><div class="lbl">read-scroll gold-in-dense-wrap pass (honest caveat — see below)</div></div>
+      <div class="n"><div class="big">0/20</div><div class="lbl">synthetic noise/blur/fiber pass</div></div>
+      <div class="n"><div class="big">~1 s</div><div class="lbl">per verdict (was ~200 s in v0.1)</div></div>
+    </div>
+    <p>The 27/36 is reported, not hidden: Scroll-4 positives are labeled at the
+    <b>wrap</b> level (a wrap has 105–159 transcribed letters), so a gold window inside a dense
+    wrap can still land on an inter-line gap or margin and correctly miss the letter-content bar —
+    a looser label than the window-level review behind the fitted-scroll 55/56. Do not average
+    these two numbers into one pooled percentage; their label provenance differs
+    (see CALIBRATION.md).</p>
+
+    <h3>The four gates — all must pass</h3>
+    <div class="gates">
+      <div class="gate">
+        <div class="gate-h"><span class="g-name">1 · degenerate</span><span class="g-thr hardfail">hard fail</span></div>
+        <p class="why">Is the box blank, saturated, or the whole map constant? Any of these fails
+        immediately with a clear message — no point feeding a flat patch into the statistics.</p>
+      </div>
+      <div class="gate">
+        <div class="gate-h"><span class="g-name">2 · letter_energy</span><span class="g-thr calibrated">≥ ${m.e_frac_min}</span></div>
+        <div class="formula">e_frac = mean(DoG(map)²) / variance(box)</div>
+        <p class="why">Band-pass (difference-of-Gaussians) energy at the letter length scale
+        (${lo}–${hi} mm letters, σ factors ${m.sigma_lo_f}/${m.sigma_hi_f}), divided by the box's own
+        variance so <b>one absolute threshold holds across maps</b> regardless of contrast.</p>
+      </div>
+      <div class="gate">
+        <div class="gate-h"><span class="g-name">3 · structure</span><span class="g-thr calibrated">≥ ${m.areafrac_min}</span></div>
+        <div class="formula">area_frac = letter-band pixels / box pixels<br>binarize at mean + ${m.areafrac_k}·std</div>
+        <p class="why">Fraction of the box covered by connected components whose <b>area</b> lands in the
+        letter-size band. Replaces v0.1's anti-predictive component <b>count</b>.</p>
+      </div>
+      <div class="gate">
+        <div class="gate-h"><span class="g-name">4 · contrast_bimodality</span><span class="g-thr calibrated">≥ ${m.otsu_min}</span></div>
+        <div class="formula">otsu = between-class var / total var</div>
+        <p class="why">Real ink-on-papyrus is <b>bimodal</b>. The classic "smooth blob" pareidolia
+        texture is unimodal and tops out near 0.66; real letters sit at 0.90 — this gate kills the
+        false positives the other two let through.</p>
+      </div>
+    </div>
+
+    <h3>The window-size guard</h3>
+    <p>A box smaller than <b>one letter</b> at your µm/px (min letter = ${lo} mm =
+    ${m.min_letter_frac} × the smallest letter) can't contain a letter, so any content verdict on it
+    is meaningless. The tool returns <b>"cannot evaluate"</b> with an actionable message — never a
+    content FAIL that would read as "no letters here". This is the #1 real cause of a good claim
+    being wrongly rejected, and it's caught explicitly.</p>
+
+    <div class="callout"><strong>Green = survived a first automated round of refutation.</strong> It
+    is <b>not</b> "confirmed ancient text" — a human reviewer still reads it. The tool contains
+    <b>no trained model</b>: three classical image statistics and explicit thresholds, all auditable.
+    The config hash on every card lets a reviewer re-run the exact same rules. Honest limits:
+    calibrated on 2 scrolls, 1 reviewer, at 15–19 µm/px (spot-checked passing at 2.4 µm/px);
+    unvalidated across other ink-detection render families.</div>
+
+    <p class="src">Every number here comes from this build's <code>card_config.py</code>, fetched from
+    the repo at load. Full derivation, dataset provenance and caveats:
+    <a href="https://github.com/LimeGS/vetting-card/blob/main/CALIBRATION.md" target="_blank" rel="noopener noreferrer">CALIBRATION.md</a>.</p>
+  `;
+}
+let _howReturnFocus = null;
+function openHow(){
+  _howReturnFocus = document.activeElement;
+  $("overlay").classList.remove("hidden"); document.body.style.overflow="hidden";
+  $("howClose").focus();
+}
+function closeHow(){
+  if($("overlay").classList.contains("hidden")) return;
+  $("overlay").classList.add("hidden"); document.body.style.overflow="";
+  _howReturnFocus?.focus?.();
+}
+$("howBtn").addEventListener("click", openHow);
+$("howClose").addEventListener("click", closeHow);
+$("overlay").addEventListener("click", e=>{ if(e.target === $("overlay")) closeHow(); });
+document.addEventListener("keydown", e=>{ if(e.key==="Escape") closeHow(); });
+
+/* ── boot pyodide + the REAL tool modules ── */
+/* ── boot progress: prefetch the vendored runtime with byte counting.
+   This warms the HTTP cache, so Pyodide's own internal fetches right after
+   are near-instant; both GitHub Pages and python -m http.server serve
+   cacheable responses. Sizes are exact — the files are vendored in-repo;
+   regenerate this list if web/vendor/pyodide/ contents change. ── */
+const VENDOR_FILES = [
+  ["pyodide.asm.js", 1231680],
+  ["pyodide.asm.wasm", 10090288],
+  ["python_stdlib.zip", 2341381],
+  ["pyodide-lock.json", 105645],
+  ["numpy-1.26.4-cp312-cp312-pyodide_2024_0_wasm32.whl", 11959233],
+  ["openblas-0.3.26.zip", 6117592],
+  ["pillow-10.2.0-cp312-cp312-pyodide_2024_0_wasm32.whl", 3042027],
+  ["scipy-1.12.0-cp312-cp312-pyodide_2024_0_wasm32.whl", 46882363],
+];
+async function prefetchRuntime(){
+  const total = VENDOR_FILES.reduce((s, [, n]) => s + n, 0);
+  let sum = 0;
+  const tick = () => {
+    const pct = Math.min(100, Math.round(100*sum/total));
+    $("bootfill").style.width = pct + "%";
+    $("bootbar").setAttribute("aria-valuenow", String(pct));
+    $("status").textContent =
+      `downloading python runtime · ${(sum/1048576).toFixed(0)} / ${Math.round(total/1048576)} MB (first visit only)`;
+  };
+  tick();
+  await Promise.all(VENDOR_FILES.map(async ([f]) => {
+    try{
+      const r = await fetch("vendor/pyodide/" + f);
+      if(!r.ok || !r.body) return;
+      const reader = r.body.getReader();
+      for(;;){
+        const {done, value} = await reader.read();
+        if(done) break;
+        sum += value.length;
+        tick();
+      }
+    }catch(e){} /* non-fatal: loadPyodide will fetch it itself */
+  }));
+  $("bootbar").hidden = true;
+}
+async function boot(){
+  try{
+    // Fetch the tool's real .py modules FIRST (they are tiny): if the server
+    // root is wrong this fails in milliseconds with a precise message,
+    // instead of after the 78 MB runtime download.
+    setStatus("fetching the tool's python modules from this repo…");
+    const sources = {};
+    for(const f of ["card_config.py","vet_map.py","make_card.py"]){
+      let src=null;
+      for(const base of ["..","."]){
+        try{ const r = await fetch(`${base}/${f}`, {cache:"no-store"}); if(r.ok){ src = await r.text(); break; } }catch(e){}
+      }
+      if(!src) throw new Error(
+        `could not fetch ${f} — the server must serve the REPO ROOT (this page's ` +
+        `parent folder), not web/ itself. From the vetting-card folder run ` +
+        `"python -m http.server" and open http://localhost:8000/web/`);
+      sources[f] = src;
+    }
+    await prefetchRuntime();
+    setStatus("starting python runtime…");
+    const py = await loadPyodide({indexURL: "vendor/pyodide/"});
+    setStatus("loading numpy · scipy · pillow…");
+    await py.loadPackage(["numpy","scipy","pillow"]);
+    for(const [f, src] of Object.entries(sources)) py.FS.writeFile(f, src);
+    await py.runPythonAsync(`
+import hashlib, json, sys
+from pathlib import Path
+sys.path.insert(0, ".")
+import numpy as np
+import card_config, vet_map, make_card
+
+def _pad(px_um):
+    _, hi = card_config.bandpass_sigmas(px_um)
+    return int(np.ceil(3*hi))
+
+def _vet(h, w, x0, y0, x1, y1, px_um, name, crop_sha256, source_x0, source_y0, source_x1, source_y1):
+    obj = js_img
+    if hasattr(obj, "to_py"):
+        obj = obj.to_py()
+    raw = np.frombuffer(obj, dtype=np.uint8).astype(np.float64).reshape(h, w)
+    result = {
+        "schema_version": card_config.CARD_SCHEMA_VERSION,
+        "tool": "vet_map.py (web)",
+        "tool_version": card_config.TOOL_VERSION,
+        "config_hash": card_config.config_hash(),
+        "evaluator": {"source": "vet_map.py", "source_sha256": hashlib.sha256(Path("vet_map.py").read_bytes()).hexdigest()},
+        "input": {
+            "map": name,
+            "map_sha256": crop_sha256,
+            "map_hash_scope": "evaluated grayscale crop bytes",
+            "map_size_bytes": int(raw.nbytes),
+            "map_shape": [h, w],
+            "map_dtype": "uint8 grayscale",
+            "bbox": [x0, y0, x1, y1],
+            "evaluated_crop_bbox_in_source": [source_x0, source_y0, source_x1, source_y1],
+            "px_um": px_um,
+            "seed": card_config.DEFAULT_SEED,
+        },
+    }
+    try:
+        outcome = vet_map.run_all_checks(raw, (x0, y0, x1, y1), px_um)
+        result["status"] = "ok"
+        result.update(outcome)
+    except vet_map.VetMapError as e:
+        result["status"] = "error"
+        result["error"] = str(e)
+        result["overall"] = {"pass": False}
+    card = make_card.render_card(result, None)
+    return json.dumps({"result": result, "card": card,
+                       "thresholds": {"letter_energy": card_config.E_FRAC_MIN,
+                                      "structure": card_config.STRUCTURE_AREAFRAC_MIN,
+                                      "contrast_bimodality": card_config.OTSU_SEP_MIN}})
+_c = card_config
+META = json.dumps({
+    "version": _c.TOOL_VERSION, "hash": _c.config_hash(),
+    "e_frac_min": _c.E_FRAC_MIN,
+    "areafrac_k": _c.STRUCTURE_AREAFRAC_K, "areafrac_min": _c.STRUCTURE_AREAFRAC_MIN,
+    "otsu_min": _c.OTSU_SEP_MIN,
+    "letter_mm": [_c.LETTER_SIZE_MM_MIN, _c.LETTER_SIZE_MM_MAX],
+    "sigma_lo_f": _c.BANDPASS_SIGMA_LO_FACTOR, "sigma_hi_f": _c.BANDPASS_SIGMA_HI_FACTOR,
+    "min_letter_frac": _c.MIN_BBOX_LETTER_FRACTION,
+})
+`);
+    const meta = JSON.parse(py.globals.get("META"));
+    window.META = meta;
+    fillHowItWorks(meta);
+    $("hashline2").textContent = meta.hash;
+    state.py = py; state.ready = true;
+    $("sampleBtn").disabled = false;
+    $("howBtn").disabled = false;
+    maybeEnableRun();
+    setStatus("ready — the checks run locally in your browser", "ready");
+  }catch(e){
+    console.error(e);
+    $("bootbar").hidden = true;
+    setStatus("failed to load: " + e.message, "err");
+  }
+}
+boot();
+
+/* ── step 1: image loading ── */
+const drop = $("drop"), fileInput = $("file");
+drop.addEventListener("click", ()=>fileInput.click());
+drop.addEventListener("keydown", e=>{ if(e.key==="Enter"||e.key===" ") fileInput.click(); });
+drop.addEventListener("dragover", e=>{ e.preventDefault(); drop.classList.add("over"); });
+drop.addEventListener("dragleave", ()=>drop.classList.remove("over"));
+drop.addEventListener("drop", e=>{
+  e.preventDefault(); drop.classList.remove("over");
+  const f = e.dataTransfer.files[0]; if(f) loadFile(f);
+});
+fileInput.addEventListener("change", ()=>{ if(fileInput.files[0]) loadFile(fileInput.files[0]); });
+
+function loadFile(f){
+  const url = URL.createObjectURL(f);
+  loadImage(url, f.name).finally(()=>URL.revokeObjectURL(url));
+}
+$("sampleBtn").addEventListener("click", async ()=>{
+  await loadImage("sample_claim.png", "sample_claim.png (PHerc 0139, verified clear text)");
+  $("pxum").value = "18.07";
+  setBbox({x0:333, y0:333, x1:877, y1:877});
+});
+
+async function loadImage(src, name){
+  const img = new Image();
+  await new Promise((res,rej)=>{ img.onload=res; img.onerror=()=>rej(new Error("could not decode image")); img.src=src; });
+  state.img = img; state.name = name; state.w = img.naturalWidth; state.h = img.naturalHeight;
+  state.loadedAt = performance.now();
+  state.bbox = null; state.gray = null;
+  const cv = $("cv");
+  const maxW = Math.min(760, cv.parentElement.clientWidth || 760);
+  // Cap the preview canvas HEIGHT too, and tightly: real ds8 wrap maps are
+  // tall strips, and width-only scaling once rendered one at its native
+  // ~5000px tall, dwarfing the dashboard and burying every other column
+  // many screens down. Capping at 60% of the viewport (560px ceiling, so a
+  // very tall browser window doesn't get an oversized preview either) keeps
+  // the whole dashboard -- including the verdict once it renders -- within
+  // reach on ordinary laptop screens without scrolling past it (this is a
+  // preview for marking a region, not a pixel viewer -- the real bbox math
+  // already works in full-resolution source coordinates via state.scale,
+  // unaffected by how small the preview renders). This also keeps well
+  // clear of the browser's per-canvas dimension ceiling (~16k px), where
+  // drawImage silently fails.
+  const maxH = Math.min(560, window.innerHeight * 0.6);
+  state.scale = Math.min(1, maxW/state.w, maxH/state.h);
+  cv.width = Math.round(state.w*state.scale);
+  cv.height = Math.round(state.h*state.scale);
+  drawOverlay(); updateBboxRead(); maybeEnableRun();
+  $("cv").scrollIntoView({behavior:SCROLL, block:"center"});
+}
+
+/* ── step 2: bbox drawing ── */
+const cv = $("cv"), ctx = cv.getContext("2d");
+function drawOverlay(){
+  if(!state.img) return;
+  ctx.clearRect(0,0,cv.width,cv.height);
+  ctx.drawImage(state.img, 0, 0, cv.width, cv.height);
+  const b = state.drawing || state.bbox;
+  if(b){
+    const s = state.scale;
+    const bx = b.x0*s, by = b.y0*s, bw = (b.x1-b.x0)*s, bh = (b.y1-b.y0)*s;
+    ctx.save();
+    ctx.fillStyle = "rgba(0,0,0,.45)";
+    ctx.beginPath(); ctx.rect(0,0,cv.width,cv.height);
+    ctx.rect(bx, by, bw, bh);
+    ctx.fill("evenodd");
+    ctx.strokeStyle = "#e8a33d"; ctx.lineWidth = 2;
+    ctx.strokeRect(bx+1, by+1, bw-2, bh-2);
+    // dimension pill, tracking the box like the design's floating label
+    const label = `${b.x1-b.x0}×${b.y1-b.y0}px`;
+    ctx.font = "500 11px 'JetBrains Mono',monospace";
+    const tw = ctx.measureText(label).width;
+    const px_ = bx, py_ = Math.max(0, by-20);
+    ctx.fillStyle = "#170f09";
+    ctx.fillRect(px_, py_, tw+10, 16);
+    ctx.fillStyle = "#f2b955";
+    ctx.textBaseline = "middle";
+    ctx.fillText(label, px_+5, py_+8);
+    ctx.restore();
+  }
+}
+function canvasPos(e){
+  const r = cv.getBoundingClientRect();
+  const x = Math.max(0, Math.min(state.w, (e.clientX-r.left)/r.width*state.w));
+  const y = Math.max(0, Math.min(state.h, (e.clientY-r.top)/r.height*state.h));
+  return {x: Math.round(x), y: Math.round(y)};
+}
+cv.addEventListener("pointerdown", e=>{
+  if(!state.img) return;
+  if(performance.now() - (state.loadedAt||0) < 600) return;  // layout settling after load: ignore stray drags
+  cv.setPointerCapture(e.pointerId);
+  const p = canvasPos(e);
+  state.drawing = {x0:p.x, y0:p.y, x1:p.x, y1:p.y, ax:p.x, ay:p.y};
+  drawOverlay();
+});
+cv.addEventListener("pointermove", e=>{
+  if(!state.drawing) return;
+  const p = canvasPos(e), d = state.drawing;
+  d.x0 = Math.min(d.ax, p.x); d.x1 = Math.max(d.ax, p.x);
+  d.y0 = Math.min(d.ay, p.y); d.y1 = Math.max(d.ay, p.y);
+  drawOverlay(); updateBboxRead(state.drawing);
+});
+cv.addEventListener("pointerup", ()=>{
+  if(!state.drawing) return;
+  const d = state.drawing; state.drawing = null;
+  if(d.x1-d.x0 >= 4 && d.y1-d.y0 >= 4) setBbox({x0:d.x0, y0:d.y0, x1:d.x1, y1:d.y1});
+  else { drawOverlay(); updateBboxRead(); maybeEnableRun(); }
+});
+
+function setBbox(b, fromManual=false){
+  state.bbox = b;
+  drawOverlay(); updateBboxRead(); maybeEnableRun();
+  if(!fromManual && b){
+    for(const [id,v] of [["mx0",b.x0],["my0",b.y0],["mx1",b.x1],["my1",b.y1]]) $(id).value = v;
+  }
+}
+for(const id of ["mx0","my0","mx1","my1"]){
+  $(id).addEventListener("input", ()=>{
+    if(!state.img) return;
+    const v = ["mx0","my0","mx1","my1"].map(i=>parseInt($(i).value,10));
+    if(v.some(isNaN)) return;
+    let [x0,y0,x1,y1] = v;
+    x0=Math.max(0,Math.min(state.w,x0)); x1=Math.max(0,Math.min(state.w,x1));
+    y0=Math.max(0,Math.min(state.h,y0)); y1=Math.max(0,Math.min(state.h,y1));
+    if(x1-x0>=4 && y1-y0>=4) setBbox({x0,y0,x1,y1}, true);
+  });
+}
+function syncPresets(){
+  const v = $("pxum").value.trim();
+  document.querySelectorAll(".preset").forEach(b =>
+    b.setAttribute("aria-pressed", b.dataset.px === v));
+}
+document.querySelectorAll(".preset").forEach(b => b.addEventListener("click", ()=>{
+  $("pxum").value = b.dataset.px;
+  syncPresets(); updateBboxRead(); maybeEnableRun();
+}));
+$("pxum").addEventListener("input", ()=>{ syncPresets(); updateBboxRead(); maybeEnableRun(); });
+
+function updateBboxRead(live){
+  const b = live || state.bbox, el = $("bboxRead"), chip = $("bboxChip");
+  if(!b){ el.textContent = "no box yet"; chip.textContent = ""; return; }
+  const w = b.x1-b.x0, h = b.y1-b.y0;
+  chip.textContent = `box ${w}×${h}px`;
+  const px = parseFloat($("pxum").value);
+  let phys = "";
+  if(px > 0){
+    const mm = (Math.min(w,h)*px/1000);
+    phys = ` · ${mm.toFixed(1)} mm short side`;
+    if(mm < 1.5) phys += `  <span class="bbox-warn">⚠ smaller than one letter (1.5 mm) — will be rejected as un-evaluable</span>`;
+  }
+  el.innerHTML = `box <b>${w}×${h}px</b> at (${b.x0}, ${b.y0})${phys}`;
+}
+function maybeEnableRun(){
+  $("runBtn").disabled = !(state.ready && state.img && state.bbox && parseFloat($("pxum").value) > 0);
+}
+
+/* ── step 3: run + render ── */
+/* Escape any Python-derived string before innerHTML interpolation: error
+   messages can embed the user's filename (self-XSS vector on a page whose
+   whole promise is that nothing leaves the machine). */
+function esc(s){
+  return String(s ?? "").replace(/[&<>"']/g,
+    ch => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
+}
+function grayscale(imgData){
+  const d = imgData.data, n = imgData.width*imgData.height, out = new Uint8Array(n);
+  for(let i=0;i<n;i++){
+    const r=d[i*4], g=d[i*4+1], b=d[i*4+2];
+    out[i] = (r===g && g===b) ? r : Math.round(0.299*r + 0.587*g + 0.114*b);  // PIL "L"
+  }
+  return out;
+}
+async function sha256Hex(bytes){
+  const hash = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(hash), b=>b.toString(16).padStart(2,"0")).join("");
+}
+$("runBtn").addEventListener("click", async ()=>{
+  const px = parseFloat($("pxum").value), b = state.bbox, py = state.py;
+  $("runBtn").disabled = true; $("runBtn").textContent = "checking…";
+  try{
+    // crop = bbox + 3*sigma_hi margin (verdict-identical, verified) — computed by the tool's own config
+    const pad = py.runPython(`_pad(${px})`);
+    const cx0 = Math.max(0, b.x0-pad), cy0 = Math.max(0, b.y0-pad);
+    const cx1 = Math.min(state.w, b.x1+pad), cy1 = Math.min(state.h, b.y1+pad);
+    const cw = cx1-cx0, ch = cy1-cy0;
+    const oc = document.createElement("canvas"); oc.width = cw; oc.height = ch;
+    oc.getContext("2d").drawImage(state.img, cx0, cy0, cw, ch, 0, 0, cw, ch);
+    const gray = grayscale(oc.getContext("2d").getImageData(0,0,cw,ch));
+    const cropHash = await sha256Hex(gray);
+    py.globals.set("js_img", py.toPy(gray));
+    const out = JSON.parse(py.runPython(
+      `_vet(${ch}, ${cw}, ${b.x0-cx0}, ${b.y0-cy0}, ${b.x1-cx0}, ${b.y1-cy0}, ${px}, ${JSON.stringify(state.name)}, ${JSON.stringify(cropHash)}, ${cx0}, ${cy0}, ${cx1}, ${cy1})`
+    ));
+    renderVerdict(out);
+    $("verdictArea").scrollIntoView({behavior:SCROLL, block:"start"});
+  }catch(e){
+    console.error(e);
+    $("verdictArea").innerHTML = `<div class="banner err"><span class="word">Error</span><span class="why">${esc(e.message)}</span></div>`;
+  }finally{
+    try{ py.globals.get("js_img")?.destroy?.(); }catch(_){}
+    $("runBtn").disabled = false; $("runBtn").textContent = "Run the checks";
+  }
+});
+
+const CHECK_META = {
+  degenerate:          {label:"degenerate",  sub:"blank / saturated input"},
+  letter_energy:       {label:"letter_energy", sub:"band-pass energy at letter scale"},
+  structure:           {label:"structure", sub:"letter-sized component coverage"},
+  contrast_bimodality: {label:"contrast_<wbr>bimodality", sub:"ink-vs-background separation (Otsu)"},
+};
+function meterHTML(value, thr){
+  const span = Math.max(value, thr)*1.35 || 1;
+  const vp = Math.min(100, value/span*100), tp = thr/span*100;
+  const cls = value >= thr ? "ok" : "bad";
+  return `<div class="meter-row">
+    <div class="meter"><div class="fill ${cls}" style="width:${vp}%"></div><div class="tick" style="left:${tp}%"></div></div>
+    <div class="meter-vals">≥${thr} <b>${value.toFixed(3)}</b></div>
+  </div>`;
+}
+function renderVerdict(out){
+  const r = out.result, area = $("verdictArea");
+  let html = "";
+  if(r.status === "error"){
+    html += `<div class="banner err"><span class="word">Cannot evaluate</span><span class="why">${esc(r.error)}</span></div>`;
+    html += `<div class="meaning">This is not a “no letters” verdict — the input could not be judged at all. Fix the message above (usually the window is smaller than one letter, or the px_um is wrong) and run again.</div>`;
+    area.innerHTML = html; return;
+  }
+  const ok = r.overall.pass;
+  html += `<div class="banner ${ok?"pass":"fail"}"><span class="word">${ok?"PASS":"FAIL"}</span>
+    <span class="why">${ok
+      ? "survived the automated refutation checks — attach the card to your post"
+      : "did not clear the calibrated bar"}</span></div>`;
+  html += `<div class="checks">`;
+  for(const [name, meta] of Object.entries(CHECK_META)){
+    const c = r.checks[name]; if(!c) continue;
+    const chip = `<span class="chip ${c.pass?"pass":"fail"}">${c.pass?"PASS":"FAIL"}</span>`;
+    let mid;
+    if(name === "degenerate"){
+      mid = `<div class="desc">${esc(c.message||"ok")}</div>`;
+    } else if(c.skipped){
+      mid = `<div class="desc">${esc(c.reason)}</div>`;
+    } else {
+      mid = meterHTML(c.value, out.thresholds[name]);
+    }
+    html += `<div class="check"><div class="name">${meta.label}</div><div class="mid">${mid}</div>${chip}</div>`;
+  }
+  html += `</div>`;
+  html += `<div class="actions">
+    <button class="primary" id="dlBtn">Download (.md)</button>
+    <button id="cpBtn">Copy markdown</button>
+  </div>`;
+  html += `<div class="meaning"><b>A green card ≠ confirmed text.</b> Thresholds were fit on 324 labeled
+    windows from two scrolls and checked on 96 external Scroll-4 windows. The card records the SHA-256 of
+    the exact grayscale crop evaluated here and config <b>${r.config_hash}</b>; a reviewer must re-run
+    matching bytes with the published evaluator.</div>`;
+  area.innerHTML = html;
+  $("dlBtn").addEventListener("click", ()=>{
+    const blob = new Blob([out.card], {type:"text/markdown"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = "VETTING_CARD.md"; a.click();
+    URL.revokeObjectURL(a.href);
+  });
+  $("cpBtn").addEventListener("click", async ()=>{
+    try{
+      await navigator.clipboard.writeText(out.card);
+      $("cpBtn").textContent = "copied ✓";
+    }catch(e){
+      // fallback for non-secure contexts / older browsers
+      const ta = document.createElement("textarea");
+      ta.value = out.card; ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.select();
+      const ok = document.execCommand && document.execCommand("copy");
+      ta.remove();
+      $("cpBtn").textContent = ok ? "copied ✓" : "copy failed — use Download";
+    }
+    setTimeout(()=>$("cpBtn").textContent="Copy markdown", 1800);
+  });
+}
+</script>
+</body>
+</html>

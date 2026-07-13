@@ -1,0 +1,319 @@
+{
+  "schema_version": "v0",
+  "note": "Every entry below is a REAL example drawn from this project's own published docs and internal working files (see each entry's 'provenance' block) -- none are invented, and the windows are exactly the ones already human-reviewed (coordinates unchanged from the original review; no new windows were picked). Resolution state as of 2026-07-10: the positive entry's source raster has been traced to a public, independently-fetchable URL (byte-identity verified, see its provenance.identity_verification) and can be fetched by fetch_fixtures.py. The three blank entries' WINDOW COORDINATES translate 1:1 to the public segment PPM grids (verified against the public PPM headers, see each entry's region.coordinate_frame), but their pixel CONTENT is a locally-computed canonical-model ink render that was never published anywhere -- it is re-derivable only by re-running the recorded pipeline on fully public inputs (GPU required, not guaranteed byte-identical across hardware), so those entries are honestly marked NOT_PUBLICLY_FETCHABLE with the exact reviewed arrays pinned by sha256 in 'content_pin'.",
+  "fixtures": [
+    {
+      "id": "gate0_s1_known_text",
+      "kind": "positive",
+      "description": "Scroll 1 window with known, legible letters (the Gate-0 'known letters' calibration strip on the title-region wrap -1 segment). This is the exact crop used as a 'known text' reference/validation window in this project's own Gate-0 canonical-inference check, which re-ran inference on this window and correlated the result against the official ink-detection map at r=0.945 (full-res) / r=0.901 (4x downsampled) -- both above the script's own success bar of r>=0.9.",
+      "scroll": "1",
+      "region": {
+        "raster": "PHercParis4-20260603005223-2.4um-0.22m-78keV-volume-20260411134726-20260417190342-new_canon_autoresearch_recipe-tile256-stride128.tif (official ink-detection map of Scroll 1 / PHercParis4 segment 20260603005223-5753_-1; local working alias was ink_m1_fullres.tif)",
+        "rows": [
+          14280,
+          16060
+        ],
+        "cols": [
+          5840,
+          8120
+        ],
+        "row_col_convention": "numpy-style [start:stop) slice on the full-resolution TIF: tif[rows[0]:rows[1], cols[0]:cols[1]] (TIF is 80880 rows x 15600 cols, uint8)",
+        "px_um": 2.4,
+        "px_um_note": "Derived 2026-07-10 from public metadata, two independent sources: (1) the segment's surface-volume zarr .zattrs (https://vesuvius-challenge-open-data.s3.us-east-1.amazonaws.com/PHercParis4/segments/20260603005223-5753_-1/surface-volumes/2.4um-0.22m-78keV-volume-20260411134726.zarr/.zattrs) declares coordinate scale [2.4, 2.4, 2.4] micrometer and canvas_size [15600, 80880], which matches the ink TIF's dimensions (80880x15600) exactly -- the ink map grid is 1:1 with the surface-volume render grid, which is at volume voxel resolution; (2) the bucket-root metadata (https://vesuvius-challenge-open-data.s3.us-east-1.amazonaws.com/metadata.json, gzip JSON) lists volume 20260411134726 with pixel_size_um: 2.4. Note: this 2026 segment lives in the official AWS open-data mirror, not under dl.ash2txt.org/full-scrolls/Scroll1/PHercParis4.volpkg/paths/ (checked 2026-07-10: the 5753_-x series is absent there), so the mirror URLs above are the canonical public metadata sources."
+      },
+      "provenance": {
+        "type": "url",
+        "url": "https://vesuvius-challenge-open-data.s3.us-east-1.amazonaws.com/PHercParis4/segments/20260603005223-5753_-1/ink-detection/PHercParis4-20260603005223-2.4um-0.22m-78keV-volume-20260411134726-20260417190342-new_canon_autoresearch_recipe-tile256-stride128.tif",
+        "expected_size_bytes": 72508353,
+        "identity_verification": {
+          "date": "2026-07-10",
+          "method": "byte-identity of the public object vs the local working file data/letters/ink_m1_fullres.tif that the Gate-0 script actually ran on: exact size match (72508353 bytes both) plus sha256 equality of three Range-fetched byte windows",
+          "ranges_checked": [
+            {
+              "bytes": "0-1048575",
+              "sha256": "f38068bbe7d93589ba14ecb02335b2ae466fa74531856e0e50a917dd0465391c"
+            },
+            {
+              "bytes": "36000000-37048575",
+              "sha256": "4a046a00959500b77608abeb53f1b8fef7cc642f9da17af2bb8e0c72bdb3ab44"
+            },
+            {
+              "bytes": "72504257-72508352",
+              "sha256": "fec8b421e2ffdbabebd846423baa27e85a2f207061039b4da0dcb5e910f13929"
+            }
+          ],
+          "full_file_sha256": {
+            "value": "efdffc56e184c38fcf83c0285c22b306225ee92ec58da916399b93ca4a229996",
+            "note": "computed 2026-07-10 over the complete 72,508,353-byte live download of the public URL; identical to sha256(data/letters/ink_m1_fullres.tif) computed the same day -- byte identity now proven over the whole file, not just the three sampled ranges above"
+          }
+        },
+        "cited_docs": [
+          "data/letters/gate0_infer_mac.py (lines 21-22, 41-44: render62.npy shape (62,1780,2280) fixes ny=1780,nx=2280; crop = ink_m1_fullres.tif[14280:14280+1780, 5840:5840+2280])",
+          "data/letters/gate0_mac.log (lines 9-10: 'GATE0 corr full-res vs TIF oficial: 0.945', 'GATE0 corr ds4: 0.901')",
+          "data/letters/canon_reader2.py (line 86: same segment's surface-volume zarr, calibration window Y 14336-16000 X 5888-8064 inside this crop -- ties the crop to segment 20260603005223-5753_-1)"
+        ],
+        "detail": "Official ink-detection TIF for PHercParis4 segment 20260603005223-5753_-1 (published 2026-07-03 in the Vesuvius Challenge AWS open-data mirror, public-read). The local working file data/letters/ink_m1_fullres.tif is a byte-identical download of this object (see identity_verification)."
+      },
+      "status": "FETCHED_VERIFIED",
+      "sha256": "f27d46e95597be91fab60d07d0ec6aac2eb0a5f80a498e0b10c512898dffd228",
+      "fetchable_now": true,
+      "notes": "'Known letters' here is the framing given for this window by the parent project; this manifest entry does not independently re-verify letter identity, only cites the source files above. At 2.4 um/px a 1.5-4mm Greek letter is 625-1667 px tall, so this 1780x2280 window holds only a couple of letterforms at native resolution.",
+      "fetched_date": "2026-07-10",
+      "fixture": {
+        "path": "fixtures/cache/gate0_s1_known_text.npy",
+        "shape": [
+          1780,
+          2280
+        ],
+        "dtype": "uint8",
+        "array_sha256": "4aa4057eff33d0324a87fbbb530040e65491c019145577359a499cce317aee3f",
+        "npy_file_sha256": "f27d46e95597be91fab60d07d0ec6aac2eb0a5f80a498e0b10c512898dffd228"
+      },
+      "source_file": {
+        "path": "fixtures/cache/sources/gate0_s1_known_text_source.tif",
+        "sha256": "efdffc56e184c38fcf83c0285c22b306225ee92ec58da916399b93ca4a229996",
+        "size_bytes": 72508353
+      }
+    },
+    {
+      "id": "s3p1_y700_x2100",
+      "kind": "blank",
+      "description": "Scroll 3, prime 1 mosaic window. Automated literacy-classifier scan (proxy_v4) originally flagged this window 'interesting' (score 0.0332); a follow-up human review with 3x3 spatial context downgraded it to 'noise' -- i.e. a candidate that looked promising to a first pass and was refuted on closer look, the exact failure mode this tool exists to automate.",
+      "scroll": "3",
+      "region": {
+        "raster": "data/letters/s1_atlas/harvest_20260706/s3p1_mosaic.npy (shape (2739,25309) float16, verified against this entry's bounds)",
+        "rows": [
+          700,
+          2100
+        ],
+        "cols": [
+          2100,
+          3500
+        ],
+        "row_col_convention": "numpy-style [start:stop) slice: s3p1_mosaic.npy[rows[0]:rows[1], cols[0]:cols[1]] (window side 1400px, per S3WIN['s3p1'] in train_proxy_s2s3_v1.py)",
+        "coordinate_frame": {
+          "note": "The mosaic's pixel grid IS the full-resolution PPM grid of the public segment: mosaic shape (2739, 25309) == public PPM header (height 2739, width 25309), and the stitching placed each rendered patch at its PPM (row, col) offset. So this window is rows 700:2100, cols 2100:3500 of segment 20240716140050's own flattened coordinate frame.",
+          "segment_id": "20240716140050",
+          "ppm_url": "https://dl.ash2txt.org/full-scrolls/Scroll3/PHerc332.volpkg/paths/20240716140050/20240716140050.ppm",
+          "ppm_header_dims": {
+            "width": 25309,
+            "height": 2739
+          },
+          "verified": "2026-07-10 (Range-fetched PPM header vs local mosaic shape)"
+        },
+        "px_um": 7.91,
+        "px_um_note": "Derived 2026-07-10 from public metadata: segment meta.json (https://dl.ash2txt.org/full-scrolls/Scroll3/PHerc332.volpkg/paths/20240716140050/meta.json) says \"volume\": \"20231117143551\"; that volume's meta.json (https://dl.ash2txt.org/full-scrolls/Scroll3/PHerc332.volpkg/volumes/20231117143551/meta.json) says voxelsize 7.91 ('PHerc0332, 53 keV, 7.91 um, merged'). PPM grids are at volume voxel resolution, so 7.91 um/px. Cross-check: sqrt(area_cm2*1e8/(H*W)) with the public area_cm2.txt (34.158) gives 7.02 um -- lower than 7.91 exactly as expected, because area_cm2 measures mesh surface area while H*W counts the full bounding rectangle (~79% mesh coverage). CORRECTION: this entry previously said 2.4 um ('2.4 um-class' from NEGATIVE_RESULTS.md prose); that figure describes the 2.399um rescan volume sampled for intensities, NOT the render grid pitch, and was wrong here."
+      },
+      "provenance": {
+        "type": "local_render_from_public_inputs",
+        "local_source": "data/letters/s1_atlas/harvest_20260706/s3p1_mosaic.npy",
+        "public_inputs": {
+          "ppm": "https://dl.ash2txt.org/full-scrolls/Scroll3/PHerc332.volpkg/paths/20240716140050/20240716140050.ppm",
+          "intensity_volume_zarr": "https://vesuvius-challenge-open-data.s3.us-east-1.amazonaws.com/PHerc0332/volumes/20251211183505-2.399um-0.2m-78keV-masked.zarr/0",
+          "model_checkpoint": "https://huggingface.co/scrollprize/ink_canonical_2um/resolve/main/r152_3ddec_v2_l5_epoch13.ckpt"
+        },
+        "render_pipeline": [
+          "tools/session-20260706/patchwork2.py (62-layer render of PPM patches against the 2.399um rescan, trilinear sampling; segment 20240716140050)",
+          "tools/session-20260706/trackb_infer.py + run_tile_worker.sh (canonical r152 ink inference per 1000x3000 patch; patch grid rows {0,870,1740} x col starts step 2800, per tools/session-20260706/patches332.txt)",
+          "data/letters/s1_atlas/stitch_score_generic.py (mean-of-valid-overlaps stitch of patches p{r0}_{c0}.npy into the full (2739,25309) PPM frame)"
+        ],
+        "cited_docs": [
+          "release/publication/NEGATIVE_RESULTS.md section (f) 'Exhaustive Scroll 2/3 window sweeps: zero gold windows' (aggregate counts and the 'downgraded ... to noise' human-review narrative; commit 135221d per that section's prose)",
+          "data/letters/s1_atlas/triage/s2s3_context_review_final.json (row: id=s3p1_y700_x2100, tagOriginal=interesting, tagFinal=noise, score=0.0332 -- this is the per-window commit-135221d data NEGATIVE_RESULTS.md section (f) summarizes)",
+          "data/letters/s1_atlas/train_proxy_s2s3_v1.py line 31 (S3WIN={'s3p1':1400,'s3p2':1359} -- defines the window side length in px for this id's y/x anchor)"
+        ],
+        "detail": "The mosaic's pixel CONTENT is a locally-computed canonical-model ink render (rendered on rented GPUs from the fully public inputs listed above), never published anywhere with a stable URL. No public ink raster exists for this segment at all (checked 2026-07-10: dl.ash2txt.org paths/20240716140050/ has only mesh/PPM/layers/mask, and the AWS mirror has zero PHerc0332 segments). Re-derivation from public inputs requires re-running the recorded GPU pipeline and is not guaranteed byte-identical across hardware, so this entry is NOT fetchable by download; the exact human-reviewed array is pinned in content_pin."
+      },
+      "content_pin": {
+        "array_sha256": "c1bf2b51fdc11f105c0f1d12fa3f8633f56d32dfda7bf2692328854cd3a8d9d9",
+        "shape": [
+          1400,
+          1400
+        ],
+        "dtype": "float16",
+        "byte_order": "C-contiguous, sha256 over ndarray.tobytes()",
+        "computed": "2026-07-10",
+        "computed_from": "s3p1_mosaic.npy[700:2100, 2100:3500] on the parent project's working tree (the exact array the commit-135221d human review graded)"
+      },
+      "status": "NOT_PUBLICLY_FETCHABLE",
+      "sha256": null,
+      "fetchable_now": false,
+      "notes": "'Confirmed noise' reflects one human review round (3x3 spatial context, commit 135221d) on one classifier's output, not an independent second reviewer.",
+      "local_verification": {
+        "date": "2026-07-10",
+        "matches_content_pin": true,
+        "fixture": {
+          "path": "fixtures/cache/s3p1_y700_x2100.npy",
+          "shape": [
+            1400,
+            1400
+          ],
+          "dtype": "float16",
+          "array_sha256": "c1bf2b51fdc11f105c0f1d12fa3f8633f56d32dfda7bf2692328854cd3a8d9d9",
+          "npy_file_sha256": "12d971d9bf9fa5e0527b78eed486d3faa78980c2c153a41f8c3384f256b03796"
+        },
+        "note": "produced from the parent project's local source raster; NOT a public fetch"
+      }
+    },
+    {
+      "id": "s3p2_y0_x8148",
+      "kind": "blank",
+      "description": "Scroll 3, prime 2 mosaic window. Automated literacy-classifier scan originally flagged this window 'interesting' (score 0.0203); the same 3x3-context human review round downgraded it to 'noise'.",
+      "scroll": "3",
+      "region": {
+        "raster": "data/letters/s1_atlas/harvest_20260706/s3p2_mosaic.npy (shape (2491,25706) float16, verified against this entry's bounds)",
+        "rows": [
+          0,
+          1359
+        ],
+        "cols": [
+          8148,
+          9507
+        ],
+        "row_col_convention": "numpy-style [start:stop) slice: s3p2_mosaic.npy[rows[0]:rows[1], cols[0]:cols[1]] (window side 1359px, per S3WIN['s3p2'] in train_proxy_s2s3_v1.py)",
+        "coordinate_frame": {
+          "note": "Same 1:1 mapping as the s3p1 entries: mosaic shape (2491, 25706) == public PPM header (height 2491, width 25706), so this window is rows 0:1359, cols 8148:9507 of segment 20240618142020's own flattened coordinate frame.",
+          "segment_id": "20240618142020",
+          "ppm_url": "https://dl.ash2txt.org/full-scrolls/Scroll3/PHerc332.volpkg/paths/20240618142020/20240618142020.ppm",
+          "ppm_header_dims": {
+            "width": 25706,
+            "height": 2491
+          },
+          "verified": "2026-07-10 (Range-fetched PPM header vs local mosaic shape)"
+        },
+        "px_um": 7.91,
+        "px_um_note": "Same derivation as the s3p1_y700_x2100 entry: segment meta.json (https://dl.ash2txt.org/full-scrolls/Scroll3/PHerc332.volpkg/paths/20240618142020/meta.json) -> volume 20231117143551 -> voxelsize 7.91 um (public volume meta.json). Cross-check via public area_cm2.txt (33.5112) gives 7.23 um (mesh area over full bounding rectangle, ~84% coverage). Same CORRECTION as the s3p1 entries (was wrongly 2.4)."
+      },
+      "provenance": {
+        "type": "local_render_from_public_inputs",
+        "local_source": "data/letters/s1_atlas/harvest_20260706/s3p2_mosaic.npy",
+        "public_inputs": {
+          "ppm": "https://dl.ash2txt.org/full-scrolls/Scroll3/PHerc332.volpkg/paths/20240618142020/20240618142020.ppm",
+          "intensity_volume_zarr": "https://vesuvius-challenge-open-data.s3.us-east-1.amazonaws.com/PHerc0332/volumes/20251211183505-2.399um-0.2m-78keV-masked.zarr/0",
+          "model_checkpoint": "https://huggingface.co/scrollprize/ink_canonical_2um/resolve/main/r152_3ddec_v2_l5_epoch13.ckpt"
+        },
+        "render_pipeline": [
+          "tools/session-20260706/patchwork2_s3p2.py (same renderer as patchwork2.py, PPM switched to segment 20240618142020)",
+          "tools/session-20260706/trackb_infer.py + run_tile_worker.sh (canonical r152 ink inference per 1000x3000 patch; patch grid rows {0,870,1492} x col starts step 2800)",
+          "data/letters/s1_atlas/stitch_score_generic.py (mean-of-valid-overlaps stitch into the full (2491,25706) PPM frame)"
+        ],
+        "cited_docs": [
+          "release/publication/NEGATIVE_RESULTS.md section (f)",
+          "data/letters/s1_atlas/triage/s2s3_context_review_final.json (row: id=s3p2_y0_x8148, tagOriginal=interesting, tagFinal=noise, score=0.0203)",
+          "data/letters/s1_atlas/train_proxy_s2s3_v1.py line 31 (S3WIN)"
+        ],
+        "detail": "Same situation as s3p1_y700_x2100: locally-rendered content from fully public inputs, never published; no public ink raster exists for segment 20240618142020 (checked 2026-07-10). Exact reviewed array pinned in content_pin."
+      },
+      "content_pin": {
+        "array_sha256": "cd1982cd078ecdd5902a39e87f834d9153d30b86fa81ae0d59a485f490d6bbbe",
+        "shape": [
+          1359,
+          1359
+        ],
+        "dtype": "float16",
+        "byte_order": "C-contiguous, sha256 over ndarray.tobytes()",
+        "computed": "2026-07-10",
+        "computed_from": "s3p2_mosaic.npy[0:1359, 8148:9507] on the parent project's working tree (the exact array the commit-135221d human review graded)"
+      },
+      "status": "NOT_PUBLICLY_FETCHABLE",
+      "sha256": null,
+      "fetchable_now": false,
+      "notes": "PROVISIONAL review caveat, same as the s3p1_y700_x2100 entry above.",
+      "local_verification": {
+        "date": "2026-07-10",
+        "matches_content_pin": true,
+        "fixture": {
+          "path": "fixtures/cache/s3p2_y0_x8148.npy",
+          "shape": [
+            1359,
+            1359
+          ],
+          "dtype": "float16",
+          "array_sha256": "cd1982cd078ecdd5902a39e87f834d9153d30b86fa81ae0d59a485f490d6bbbe",
+          "npy_file_sha256": "440d62c40761d8b9f35a8adfa879643a2a26a421b121617d800b5ee8428a4b7f"
+        },
+        "note": "produced from the parent project's local source raster; NOT a public fetch"
+      }
+    },
+    {
+      "id": "s3p1_y0_x2100",
+      "kind": "blank",
+      "description": "Scroll 3, prime 1 mosaic window (a second, different window from the same prime as s3p1_y700_x2100 above). Automated literacy-classifier scan originally flagged this window 'interesting' (score 0.0196); the same 3x3-context human review round downgraded it to 'noise'.",
+      "scroll": "3",
+      "region": {
+        "raster": "data/letters/s1_atlas/harvest_20260706/s3p1_mosaic.npy (shape (2739,25309) float16, verified against this entry's bounds)",
+        "rows": [
+          0,
+          1400
+        ],
+        "cols": [
+          2100,
+          3500
+        ],
+        "row_col_convention": "numpy-style [start:stop) slice: s3p1_mosaic.npy[rows[0]:rows[1], cols[0]:cols[1]] (window side 1400px, per S3WIN['s3p1'] in train_proxy_s2s3_v1.py)",
+        "coordinate_frame": {
+          "note": "Same frame as s3p1_y700_x2100: rows 0:1400, cols 2100:3500 of segment 20240716140050's own flattened coordinate frame (mosaic grid == public PPM grid, dims verified).",
+          "segment_id": "20240716140050",
+          "ppm_url": "https://dl.ash2txt.org/full-scrolls/Scroll3/PHerc332.volpkg/paths/20240716140050/20240716140050.ppm",
+          "ppm_header_dims": {
+            "width": 25309,
+            "height": 2739
+          },
+          "verified": "2026-07-10 (Range-fetched PPM header vs local mosaic shape)"
+        },
+        "px_um": 7.91,
+        "px_um_note": "Same derivation and CORRECTION as the s3p1_y700_x2100 entry above (was wrongly 2.4)."
+      },
+      "provenance": {
+        "type": "local_render_from_public_inputs",
+        "local_source": "data/letters/s1_atlas/harvest_20260706/s3p1_mosaic.npy",
+        "public_inputs": {
+          "ppm": "https://dl.ash2txt.org/full-scrolls/Scroll3/PHerc332.volpkg/paths/20240716140050/20240716140050.ppm",
+          "intensity_volume_zarr": "https://vesuvius-challenge-open-data.s3.us-east-1.amazonaws.com/PHerc0332/volumes/20251211183505-2.399um-0.2m-78keV-masked.zarr/0",
+          "model_checkpoint": "https://huggingface.co/scrollprize/ink_canonical_2um/resolve/main/r152_3ddec_v2_l5_epoch13.ckpt"
+        },
+        "render_pipeline": [
+          "tools/session-20260706/patchwork2.py (62-layer render of PPM patches against the 2.399um rescan, trilinear sampling; segment 20240716140050)",
+          "tools/session-20260706/trackb_infer.py + run_tile_worker.sh (canonical r152 ink inference per 1000x3000 patch; patch grid rows {0,870,1740} x col starts step 2800, per tools/session-20260706/patches332.txt)",
+          "data/letters/s1_atlas/stitch_score_generic.py (mean-of-valid-overlaps stitch into the full (2739,25309) PPM frame)"
+        ],
+        "cited_docs": [
+          "release/publication/NEGATIVE_RESULTS.md section (f)",
+          "data/letters/s1_atlas/triage/s2s3_context_review_final.json (row: id=s3p1_y0_x2100, tagOriginal=interesting, tagFinal=noise, score=0.0196)",
+          "data/letters/s1_atlas/train_proxy_s2s3_v1.py line 31 (S3WIN)"
+        ],
+        "detail": "Same situation as s3p1_y700_x2100: locally-rendered content from fully public inputs, never published; no public ink raster exists for segment 20240716140050 (checked 2026-07-10). Exact reviewed array pinned in content_pin."
+      },
+      "content_pin": {
+        "array_sha256": "f628f895a1dc84168dead65adbdab67607871248a6abf83089665cb3050dfbf3",
+        "shape": [
+          1400,
+          1400
+        ],
+        "dtype": "float16",
+        "byte_order": "C-contiguous, sha256 over ndarray.tobytes()",
+        "computed": "2026-07-10",
+        "computed_from": "s3p1_mosaic.npy[0:1400, 2100:3500] on the parent project's working tree (the exact array the commit-135221d human review graded)"
+      },
+      "status": "NOT_PUBLICLY_FETCHABLE",
+      "sha256": null,
+      "fetchable_now": false,
+      "notes": "PROVISIONAL review caveat, same as the s3p1_y700_x2100 entry above.",
+      "local_verification": {
+        "date": "2026-07-10",
+        "matches_content_pin": true,
+        "fixture": {
+          "path": "fixtures/cache/s3p1_y0_x2100.npy",
+          "shape": [
+            1400,
+            1400
+          ],
+          "dtype": "float16",
+          "array_sha256": "f628f895a1dc84168dead65adbdab67607871248a6abf83089665cb3050dfbf3",
+          "npy_file_sha256": "e1607d68b3ce14d1bfa97720b7996f220a90935ccd89c7a92c9233d070515851"
+        },
+        "note": "produced from the parent project's local source raster; NOT a public fetch"
+      }
+    }
+  ]
+}
