@@ -104,7 +104,7 @@ def main():
     args = ap.parse_args()
 
     ws = json.load(open(args.set))["windows"]
-    ws.sort(key=lambda w: w["map"])          # agrupa por mapa -> cache hits
+    ws.sort(key=lambda w: w["map"])          # group by map -> cache hits
     with Pool(args.jobs, initializer=init, initargs=(args.project_root,)) as pool:
         stats = pool.map(one, ws, chunksize=8)
     json.dump(stats, open(args.out, "w"), indent=1)

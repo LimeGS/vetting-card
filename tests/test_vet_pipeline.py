@@ -66,7 +66,7 @@ def write_honest_outputs(outputs_dir: Path, seed0: int) -> None:
         np.save(outputs_dir / f"{fid}.npy", map01)
     for i, fid in enumerate(POSITIVE_IDS):
         rng = np.random.default_rng(seed0 + 100 + i)
-        # Fondo mas limpio que los blanks: un render real de letras tiene
+        # A cleaner background than the blanks: a real render of letters has
         # fondo casi negro; el gate de bimodalidad (v0.2) lo exige.
         base = noise_canvas(rng, CANVAS, CANVAS, std=0.03)
         map01 = inject_glyphs(base, INJECT_BBOX, rng, GLYPH_SIZE, n_glyphs=6, stroke_width=3, amplitude=0.9, blur_sigma=1.2)

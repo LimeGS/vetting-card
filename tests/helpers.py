@@ -113,9 +113,9 @@ def inject_glyphs(
         m = glyphs.max()
         if m > 0:
             glyphs = glyphs / m
-        # Los renders reales saturan: empujar las rampas de borde hacia los
-        # rieles para que el parche quede bimodal (tinta/fondo), como un
-        # mapa de tinta de verdad. Sin esto, glifos chicos son puro borde.
+        # Real renders saturate: push the edge ramps to the rails so the patch
+        # is bimodal (ink/background) the way a real ink map is. Without this,
+        # small glyphs are all edge.
         glyphs = np.clip(glyphs * 1.8 - 0.25, 0.0, 1.0)
     out = base.copy()
     region = out[y0:y0 + side, x0:x0 + side]

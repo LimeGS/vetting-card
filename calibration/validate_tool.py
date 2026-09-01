@@ -48,7 +48,7 @@ def main():
     ws = json.load(open(os.path.join(HERE, "calibration_set.json")))["windows"]
     by_id = {w["id"]: w for w in ws}
 
-    # 1. las cinco del diagnóstico
+    # 1. the five from the diagnostic
     diag_ids = [i for i in by_id
                 if any(seg in i for seg in ("w044_2026011522", "w043_2026011217",
                                              "w041_2026010816", "w058_2026021020"))
@@ -58,9 +58,9 @@ def main():
         p = verdict(by_id[i])
         ok += p
         print(f"  diag {i.split('_y')[0][-20:]}: {'PASS' if p else 'FAIL'}")
-    print(f"1) diagnóstico original: {ok}/{len(diag_ids)} pasan (antes 0)")
+    print(f"1) original diagnostic: {ok}/{len(diag_ids)} pass (0 before)")
 
-    # 2. set completo por split (map-sorted para cache)
+    # 2. the complete set per split (map-sorted for the cache)
     ws_sorted = sorted(ws, key=lambda w: w["map"])
     results = {}
     for w in ws_sorted:
@@ -78,7 +78,7 @@ def main():
         passed = sum(results[w["id"]] for w in rows)
         print(f"3) external Scroll 4 {label}: {passed}/{len(rows)} pass")
 
-    # 3. sintéticos por la herramienta
+    # 3. tool-generated synthetics
     rng = np.random.default_rng(0)
     fam = {
         "white": lambda: rng.random((512, 512)),
@@ -94,7 +94,7 @@ def main():
             raw = normalize01(gen()) * 255.0
             r = run_all_checks(raw, (0, 0, 512, 512), 19.2)
             passes += r["overall"]["pass"]
-        print(f"4) sintético {name}: {passes}/20 pasan (esperado 0)")
+        print(f"4) synthetic {name}: {passes}/20 pass (0 expected)")
     blank = run_all_checks(np.full((512, 512), 7.0), (0, 0, 512, 512), 19.2)
     print(f"4) blank: degenerate gate = {'OK' if not blank['overall']['pass'] else 'MAL'}")
 
